@@ -19,7 +19,7 @@
 - 런타임: Node.js
 - 프레임워크: NestJS
 - 인증 프레임워크: Passport
-- 인증 방식: Local strategy, JWT strategy, session guard, API key guard
+- 인증 방식: Local strategy, JWT strategy, session guard, API key guard, OAuth/OIDC login
 - 데이터베이스: MySQL
 - ORM: TypeORM
 - 로컬 인프라: Docker Compose
@@ -441,7 +441,94 @@ auth:session-cache:{sessionId}
 - DB 상태가 중간 상태로 깨지지 않는다.
 - transaction 범위가 불필요하게 넓지 않다.
 
-## 과제 5: 메시지큐
+## 과제 5: OAuth/OIDC와 구글 로그인
+
+### 목표
+
+외부 identity provider를 사용하는 로그인 흐름을 경험한다.
+
+구글 로그인은 단순히 "구글 계정으로 로그인 버튼을 붙이는 기능"이 아니다. OAuth 2.0 authorization code flow와 OIDC ID token 검증, redirect callback, account linking, provider token 저장 정책을 함께 이해해야 한다.
+
+이 과제는 local auth, JWT, session 모델을 먼저 구현한 뒤 진행한다. 내부 사용자 모델과 세션 모델이 있어야 구글 계정으로 들어온 외부 identity를 우리 서비스의 사용자와 연결하는 문제를 제대로 다룰 수 있다.
+
+### 구현할 기능
+
+- Google OAuth client 설정
+- Google OAuth strategy
+- authorization URL 시작 endpoint
+- callback endpoint
+- provider profile 검증
+- local user와 provider account 연결
+- 구글 로그인 성공 후 내부 access token과 refresh session 발급
+- 기존 이메일 계정과 구글 계정 연결 정책
+- OAuth state 검증
+
+### 예상 API
+
+```text
+GET /auth/google
+GET /auth/google/callback
+GET /auth/me
+GET /auth/linked-accounts
+DELETE /auth/linked-accounts/google
+```
+
+`GET /auth/google`은 구글 인증 화면으로 redirect한다.
+
+`GET /auth/google/callback`은 구글 인증 후 돌아오는 callback을 처리한다.
+
+`GET /auth/linked-accounts`는 현재 사용자에게 연결된 외부 로그인 계정을 반환한다.
+
+`DELETE /auth/linked-accounts/google`은 구글 계정 연결을 해제한다.
+
+### 데이터 모델
+
+`auth_provider_accounts` 테이블은 최소한 다음 필드를 가진다.
+
+- `id`
+- `userId`
+- `provider`
+- `providerUserId`
+- `email`
+- `displayName`
+- `createdAt`
+- `updatedAt`
+
+선택적으로 provider access token이나 refresh token을 저장할 수 있지만, 초기 과제에서는 저장하지 않는 것을 기본으로 한다. 저장이 필요하다면 암호화, 만료, 재발급, 폐기 정책을 별도 과제로 다룬다.
+
+### 직접 구현해야 하는 부분
+
+- Google OAuth strategy 설정
+- OAuth 환경변수 검증
+- callback 처리
+- state 검증
+- provider profile에서 내부 사용자 식별
+- 신규 사용자 생성 또는 기존 사용자 연결
+- provider account unique constraint 설계
+- 구글 로그인 후 내부 JWT/session 발급
+- 연결 해제 정책
+- OAuth e2e 또는 strategy test
+
+### 검증 기준
+
+- 구글 callback이 성공하면 내부 사용자와 세션이 생성된다.
+- 같은 구글 계정으로 다시 로그인하면 기존 사용자로 로그인된다.
+- provider account는 중복 연결되지 않는다.
+- provider access token 원문은 로그에 남지 않는다.
+- state가 없거나 잘못되면 callback은 실패한다.
+- 구글 계정 연결을 해제하면 해당 provider login은 더 이상 사용할 수 없다.
+- 구글 로그인 후에도 `/auth/me`는 기존 JWT guard로 동작한다.
+
+### 이 과제에서 다루지 않는 것
+
+- 여러 OAuth provider 동시 지원
+- provider refresh token 장기 저장
+- Google API 호출
+- SAML
+- WebAuthn
+- 운영용 multi-factor authentication
+
+## 과제 6: 메시지큐
 
 ### 목표
 
@@ -566,7 +653,6 @@ npm run test:e2e
 ## 하지 않을 것
 
 - 프론트엔드 구현
-- OAuth 로그인
 - Supabase 사용
 - 완성형 인증 서버 제공
 - 첫 스켈레톤에 모든 정답 로직 포함
