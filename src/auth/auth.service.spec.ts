@@ -38,6 +38,7 @@ describe('AuthService', () => {
     findAllAliveTokensByTime: jest.MockedFunction<
       (date: Date) => Promise<RefreshToken[]>
     >;
+    revokeById: jest.MockedFunction<(id: string) => Promise<unknown>>;
   };
 
   beforeEach(() => {
@@ -52,6 +53,7 @@ describe('AuthService', () => {
     refreshTokenRepository = {
       create: jest.fn(),
       findAllAliveTokensByTime: jest.fn(),
+      revokeById: jest.fn(),
     };
 
     service = new AuthService(
@@ -173,7 +175,7 @@ describe('AuthService', () => {
   });
 
   describe('refreshAccessToken', () => {
-    it('유효한 refreshToken이면 accessToken을 재발급한다', async () => {
+    it('유효한 refreshToken이면 기존 토큰을 폐기하고 새 토큰들을 발급한다', async () => {
       const refreshToken = 'refresh-token';
       const tokenHash = await bcrypt.hash(refreshToken, 10);
 
@@ -189,8 +191,22 @@ describe('AuthService', () => {
         passwordHash: 'hashed-password',
       });
       jwtService.signAsync.mockResolvedValue('new-access-token');
+      refreshTokenRepository.revokeById.mockResolvedValue(undefined);
+      refreshTokenRepository.create.mockImplementation((refreshTokenEntity) =>
+        Promise.resolve({
+          id: 'refresh-token-2',
+          userId: refreshTokenEntity.userId ?? '',
+          user: {} as RefreshToken['user'],
+          tokenHash: refreshTokenEntity.tokenHash ?? '',
+          expiresAt: refreshTokenEntity.expiresAt ?? new Date(),
+          revokedAt: refreshTokenEntity.revokedAt ?? null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        }),
+      );
 
       const result = await service.refreshAccessToken({ refreshToken });
+      const createArg = refreshTokenRepository.create.mock.calls[0]?.[0];
 
       expect(
         refreshTokenRepository.findAllAliveTokensByTime,
@@ -200,7 +216,22 @@ describe('AuthService', () => {
         sub: 'user-1',
         email: 'user@example.com',
       });
-      expect(result).toEqual({ accessToken: 'new-access-token' });
+      expect(refreshTokenRepository.revokeById).toHaveBeenCalledWith(
+        'refresh-token-1',
+      );
+      expect(result.accessToken).toBe('new-access-token');
+      expect(result.refreshToken).toEqual(expect.any(String));
+      expect(result.refreshToken).toHaveLength(128);
+      expect(result.refreshToken).not.toBe(refreshToken);
+
+      expect(createArg).toBeDefined();
+      expect(createArg?.userId).toBe('user-1');
+      expect(createArg?.revokedAt).toBeNull();
+      expect(createArg?.expiresAt).toBeInstanceOf(Date);
+      expect(createArg?.tokenHash).not.toBe(result.refreshToken);
+      await expect(
+        bcrypt.compare(result.refreshToken, createArg?.tokenHash ?? ''),
+      ).resolves.toBe(true);
     });
 
     it('일치하는 refreshToken이 없으면 UnauthorizedException을 던진다', async () => {
@@ -219,6 +250,8 @@ describe('AuthService', () => {
 
       expect(usersService.findById).not.toHaveBeenCalled();
       expect(jwtService.signAsync).not.toHaveBeenCalled();
+      expect(refreshTokenRepository.revokeById).not.toHaveBeenCalled();
+      expect(refreshTokenRepository.create).not.toHaveBeenCalled();
     });
 
     it('refreshToken의 사용자가 없으면 UnauthorizedException을 던진다', async () => {
@@ -238,6 +271,8 @@ describe('AuthService', () => {
       ).rejects.toBeInstanceOf(UnauthorizedException);
 
       expect(jwtService.signAsync).not.toHaveBeenCalled();
+      expect(refreshTokenRepository.revokeById).not.toHaveBeenCalled();
+      expect(refreshTokenRepository.create).not.toHaveBeenCalled();
     });
   });
 });

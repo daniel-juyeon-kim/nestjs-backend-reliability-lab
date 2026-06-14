@@ -89,7 +89,26 @@ export class AuthService {
       email: user.email,
     });
 
-    return { accessToken };
+    // refresh 토큰 폐기
+    await this.refreshTokenRepository.revokeById(token.id);
+    // refresh 토큰 생성
+    const newRefreshToken = randomBytes(64).toString('hex');
+    const tokenHash = await bcrypt.hash(newRefreshToken, 10);
+
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 14);
+
+    const refreshTokenEntity: Partial<RefreshToken> = {
+      userId: user.id,
+      tokenHash,
+      expiresAt,
+      revokedAt: null,
+    };
+
+    // refresh 토큰 저장
+    await this.refreshTokenRepository.create(refreshTokenEntity);
+
+    return { accessToken, refreshToken: newRefreshToken };
   }
 
   private async findMatchRefreshToken(refreshToken: string) {

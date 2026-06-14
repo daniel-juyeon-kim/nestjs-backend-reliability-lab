@@ -20,4 +20,8 @@ export class RefreshTokenRepository {
       },
     });
   }
+
+  revokeById(id: string) {
+    return this.refreshTokenRepository.update(id, { revokedAt: new Date() });
+  }
 }
