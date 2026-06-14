@@ -12,6 +12,14 @@ export class RefreshTokenRepository {
     return this.refreshTokenRepository.save(refreshToken);
   }
 
+  findAllTokensByTime(date: Date) {
+    return this.refreshTokenRepository.find({
+      where: {
+        expiresAt: MoreThan(date),
+      },
+    });
+  }
+
   findAllAliveTokensByTime(date: Date) {
     return this.refreshTokenRepository.find({
       where: {
@@ -23,5 +31,12 @@ export class RefreshTokenRepository {
 
   revokeById(id: string) {
     return this.refreshTokenRepository.update(id, { revokedAt: new Date() });
+  }
+
+  updateRevokedAtByUserId(id: string) {
+    return this.refreshTokenRepository.update(
+      { userId: id, revokedAt: IsNull() },
+      { revokedAt: new Date() },
+    );
   }
 }

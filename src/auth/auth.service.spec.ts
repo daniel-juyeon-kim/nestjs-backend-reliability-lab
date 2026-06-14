@@ -35,10 +35,16 @@ describe('AuthService', () => {
     create: jest.MockedFunction<
       (refreshToken: Partial<RefreshToken>) => Promise<RefreshToken>
     >;
+    findAllTokensByTime: jest.MockedFunction<
+      (date: Date) => Promise<RefreshToken[]>
+    >;
     findAllAliveTokensByTime: jest.MockedFunction<
       (date: Date) => Promise<RefreshToken[]>
     >;
     revokeById: jest.MockedFunction<(id: string) => Promise<unknown>>;
+    updateRevokedAtByUserId: jest.MockedFunction<
+      (userId: string) => Promise<unknown>
+    >;
   };
 
   beforeEach(() => {
@@ -52,8 +58,10 @@ describe('AuthService', () => {
     };
     refreshTokenRepository = {
       create: jest.fn(),
+      findAllTokensByTime: jest.fn(),
       findAllAliveTokensByTime: jest.fn(),
       revokeById: jest.fn(),
+      updateRevokedAtByUserId: jest.fn(),
     };
 
     service = new AuthService(
@@ -179,7 +187,7 @@ describe('AuthService', () => {
       const refreshToken = 'refresh-token';
       const tokenHash = await bcrypt.hash(refreshToken, 10);
 
-      refreshTokenRepository.findAllAliveTokensByTime.mockResolvedValue([
+      refreshTokenRepository.findAllTokensByTime.mockResolvedValue([
         createRefreshTokenFixture({
           userId: 'user-1',
           tokenHash,
@@ -208,9 +216,9 @@ describe('AuthService', () => {
       const result = await service.refreshAccessToken({ refreshToken });
       const createArg = refreshTokenRepository.create.mock.calls[0]?.[0];
 
-      expect(
-        refreshTokenRepository.findAllAliveTokensByTime,
-      ).toHaveBeenCalledWith(expect.any(Date));
+      expect(refreshTokenRepository.findAllTokensByTime).toHaveBeenCalledWith(
+        expect.any(Date),
+      );
       expect(usersService.findById).toHaveBeenCalledWith('user-1');
       expect(jwtService.signAsync).toHaveBeenCalledWith({
         sub: 'user-1',
@@ -237,7 +245,7 @@ describe('AuthService', () => {
     it('일치하는 refreshToken이 없으면 UnauthorizedException을 던진다', async () => {
       const tokenHash = await bcrypt.hash('different-refresh-token', 10);
 
-      refreshTokenRepository.findAllAliveTokensByTime.mockResolvedValue([
+      refreshTokenRepository.findAllTokensByTime.mockResolvedValue([
         createRefreshTokenFixture({
           userId: 'user-1',
           tokenHash,
@@ -252,13 +260,16 @@ describe('AuthService', () => {
       expect(jwtService.signAsync).not.toHaveBeenCalled();
       expect(refreshTokenRepository.revokeById).not.toHaveBeenCalled();
       expect(refreshTokenRepository.create).not.toHaveBeenCalled();
+      expect(
+        refreshTokenRepository.updateRevokedAtByUserId,
+      ).not.toHaveBeenCalled();
     });
 
     it('refreshToken의 사용자가 없으면 UnauthorizedException을 던진다', async () => {
       const refreshToken = 'refresh-token';
       const tokenHash = await bcrypt.hash(refreshToken, 10);
 
-      refreshTokenRepository.findAllAliveTokensByTime.mockResolvedValue([
+      refreshTokenRepository.findAllTokensByTime.mockResolvedValue([
         createRefreshTokenFixture({
           userId: 'missing-user',
           tokenHash,
@@ -270,6 +281,42 @@ describe('AuthService', () => {
         service.refreshAccessToken({ refreshToken }),
       ).rejects.toBeInstanceOf(UnauthorizedException);
 
+      expect(jwtService.signAsync).not.toHaveBeenCalled();
+      expect(refreshTokenRepository.revokeById).not.toHaveBeenCalled();
+      expect(refreshTokenRepository.create).not.toHaveBeenCalled();
+      expect(
+        refreshTokenRepository.updateRevokedAtByUserId,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('폐기된 refreshToken이 재사용되면 사용자의 모든 토큰을 폐기한다', async () => {
+      const refreshToken = 'refresh-token';
+      const tokenHash = await bcrypt.hash(refreshToken, 10);
+
+      refreshTokenRepository.findAllTokensByTime.mockResolvedValue([
+        createRefreshTokenFixture({
+          userId: 'user-1',
+          tokenHash,
+          revokedAt: new Date(),
+        }),
+      ]);
+      usersService.findById.mockResolvedValue({
+        id: 'user-1',
+        email: 'user@example.com',
+        passwordHash: 'hashed-password',
+      });
+      refreshTokenRepository.updateRevokedAtByUserId.mockResolvedValue(
+        undefined,
+      );
+
+      await expect(
+        service.refreshAccessToken({ refreshToken }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+
+      expect(usersService.findById).toHaveBeenCalledWith('user-1');
+      expect(
+        refreshTokenRepository.updateRevokedAtByUserId,
+      ).toHaveBeenCalledWith('user-1');
       expect(jwtService.signAsync).not.toHaveBeenCalled();
       expect(refreshTokenRepository.revokeById).not.toHaveBeenCalled();
       expect(refreshTokenRepository.create).not.toHaveBeenCalled();

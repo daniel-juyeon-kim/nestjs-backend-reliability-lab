@@ -74,16 +74,19 @@ export class AuthService {
   async refreshAccessToken({ refreshToken }: RefreshTokenDto) {
     const token = await this.findMatchRefreshToken(refreshToken);
 
-    if (token === null) {
-      throw new UnauthorizedException();
-    }
-
     const user = await this.userService.findById(token.userId);
 
     if (user === null) {
       throw new UnauthorizedException();
     }
 
+    if (token.revokedAt !== null) {
+      // 토큰 테이블에 사용자에 해당되는 토큰 폐기(update revokedAt)
+      await this.refreshTokenRepository.updateRevokedAtByUserId(user.id);
+      throw new UnauthorizedException();
+    }
+
+    // 정상 흐름
     const accessToken = await this.jwtService.signAsync<JwtPayloadDto>({
       sub: user.id,
       email: user.email,
@@ -112,6 +115,20 @@ export class AuthService {
   }
 
   private async findMatchRefreshToken(refreshToken: string) {
+    const tokens = await this.refreshTokenRepository.findAllTokensByTime(
+      new Date(),
+    );
+
+    for (const token of tokens) {
+      if (await bcrypt.compare(refreshToken, token.tokenHash)) {
+        return token;
+      }
+    }
+
+    throw new UnauthorizedException();
+  }
+
+  private async findMatchAliveRefreshToken(refreshToken: string) {
     const tokens = await this.refreshTokenRepository.findAllAliveTokensByTime(
       new Date(),
     );
@@ -126,7 +143,7 @@ export class AuthService {
   }
 
   async logout(dto: RefreshTokenDto) {
-    const token = await this.findMatchRefreshToken(dto.refreshToken);
+    const token = await this.findMatchAliveRefreshToken(dto.refreshToken);
 
     if (token === null) {
       throw new UnauthorizedException();
