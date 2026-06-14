@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NestJS Passport 구조 및 역할/책임/행위 시각화</title>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <!-- 코드 하이라이팅을 위한 Highlight.js 라이브러리 추가 -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github-dark.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/languages/typescript.min.js"></script>
+  <style>
+    :root {
+      --bg-color: #0d0f12;
+      --layer-bg: rgba(255, 255, 255, 0.015);
+      --card-bg: rgba(22, 26, 33, 0.9);
+      --border-color: rgba(255, 255, 255, 0.06);
+      --text-main: #f3f4f6;
+      --text-sub: #9ca3af;
+      
+      --color-guard: #10b981;
+      --color-engine: #8b5cf6;
+      --color-strategy: #f59e0b;
+      --color-service: #3b82f6;
+      --color-controller: #ec4899;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      font-family: 'Outfit', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2.5rem 1.5rem;
+      overflow-x: auto;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 2.5rem;
+    }
+
+    h1 {
+      font-size: 2.2rem;
+      font-weight: 800;
+      margin-bottom: 0.5rem;
+      background: linear-gradient(135deg, #ffffff 40%, var(--text-sub) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      letter-spacing: -0.02em;
+    }
+
+    .subtitle {
+      font-size: 1rem;
+      color: var(--text-sub);
+      font-weight: 300;
+    }
+
+    /* 레이아웃 분할 컨테이너 */
+    .main-layout {
+      display: flex;
+      gap: 2.5rem;
+      width: 100%;
+      max-width: 1200px;
+      align-items: flex-start;
+    }
+
+    /* 좌측 다이어그램 영역 */
+    .diagram-container {
+      position: relative;
+      width: 720px;
+      height: 500px;
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.03);
+      padding: 10px;
+      box-shadow: inset 0 0 40px rgba(0,0,0,0.5);
+      flex-shrink: 0;
+    }
+
+    /* 우측 상세 인스펙터 패널 */
+    .inspector-panel {
+      flex-grow: 1;
+      background: rgba(22, 26, 33, 0.95);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 16px;
+      padding: 2rem;
+      min-height: 500px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+      backdrop-filter: blur(12px);
+    }
+
+    /* 그룹 레이어 */
+    .layer-box {
+      position: absolute;
+      border: 1px dashed rgba(255, 255, 255, 0.12);
+      border-radius: 16px;
+      background: var(--layer-bg);
+      padding: 1rem;
+      pointer-events: none;
+    }
+
+    .layer-title {
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: var(--text-sub);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      position: absolute;
+      top: -10px;
+      left: 15px;
+      background: var(--bg-color);
+      padding: 0 6px;
+    }
+
+    .layer-web { border-color: rgba(236, 72, 153, 0.25); }
+    .layer-passport { border-color: rgba(139, 92, 246, 0.25); }
+    .layer-service { border-color: rgba(59, 130, 246, 0.25); }
+
+    /* 컴포넌트 카드 */
+    .card {
+      position: absolute;
+      width: 170px;
+      height: 90px;
+      background: var(--card-bg);
+      border: 2px solid var(--border-color);
+      border-radius: 12px;
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+      cursor: pointer;
+      z-index: 10;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .card:hover, .card.selected {
+      transform: translateY(-4px);
+      border-color: rgba(255, 255, 255, 0.2);
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+    }
+
+    .card.selected {
+      background: rgba(30, 35, 45, 0.95);
+    }
+
+    .card-title {
+      font-size: 1rem;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      margin-bottom: 0.2rem;
+    }
+
+    .card-sub {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.65rem;
+      color: var(--text-sub);
+    }
+
+    /* 카드 색상 */
+    .card-guard.selected, .card-guard:hover { border-color: var(--color-guard); box-shadow: 0 0 15px rgba(16, 185, 129, 0.2); }
+    .card-guard .card-title { color: var(--color-guard); }
+
+    .card-engine.selected, .card-engine:hover { border-color: var(--color-engine); box-shadow: 0 0 15px rgba(139, 92, 246, 0.2); }
+    .card-engine .card-title { color: var(--color-engine); }
+
+    .card-strategy.selected, .card-strategy:hover { border-color: var(--color-strategy); box-shadow: 0 0 15px rgba(245, 158, 11, 0.2); }
+    .card-strategy .card-title { color: var(--color-strategy); }
+
+    .card-service.selected, .card-service:hover { border-color: var(--color-service); box-shadow: 0 0 15px rgba(59, 130, 246, 0.2); }
+    .card-service .card-title { color: var(--color-service); }
+
+    .card-controller.selected, .card-controller:hover { border-color: var(--color-controller); box-shadow: 0 0 15px rgba(236, 72, 153, 0.2); }
+    .card-controller .card-title { color: var(--color-controller); }
+
+    /* SVG 연결선 */
+    .arrow-path {
+      stroke: rgba(255, 255, 255, 0.15);
+      stroke-width: 2.2;
+      fill: none;
+    }
+
+    .arrow-path.active {
+      stroke: var(--color-engine);
+      stroke-dasharray: 6, 4;
+      animation: dash 15s linear infinite;
+    }
+
+    .arrow-path.success {
+      stroke: var(--color-guard);
+    }
+
+    .arrow-path.dashed {
+      stroke-dasharray: 4, 4;
+    }
+
+    .arrow-text {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.68rem;
+      fill: var(--text-sub);
+      font-weight: bold;
+    }
+
+    .arrow-num {
+      font-family: 'Outfit', sans-serif;
+      font-size: 0.75rem;
+      font-weight: 800;
+      fill: #ffffff;
+    }
+
+    @keyframes dash {
+      to {
+        stroke-dashoffset: -100;
+      }
+    }
+
+    /* 인스펙터 콘텐츠 스타일 */
+    .inspector-header {
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      padding-bottom: 0.75rem;
+    }
+
+    .inspector-title {
+      font-size: 1.4rem;
+      font-weight: 800;
+    }
+
+    .inspector-sub {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      color: var(--text-sub);
+      margin-top: 0.25rem;
+      display: block;
+    }
+
+    .yaml-box {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8rem;
+      line-height: 1.5;
+      background: rgba(0, 0, 0, 0.3);
+      padding: 1.2rem;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.03);
+      overflow-x: auto;
+      white-space: pre-wrap;
+    }
+
+    .yaml-key { color: #818cf8; font-weight: bold; }
+    .yaml-val { color: #34d399; }
+    .yaml-role { color: #fca5a5; }
+
+    /* 코드 에디터 디자인 스타일 */
+    .editor-container {
+      display: flex;
+      flex-direction: column;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 8px;
+      background: #0f1015;
+      overflow: hidden;
+    }
+
+    .editor-tab-header {
+      background: #181a20;
+      padding: 0.5rem 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .tab-circle {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+
+    .tc-red { background: #ff5f56; }
+    .tc-yellow { background: #ffbd2e; }
+    .tc-green { background: #27c93f; }
+
+    .tab-title {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+      color: var(--text-sub);
+      margin-left: 0.5rem;
+    }
+
+    .code-title {
+      font-size: 0.8rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-sub);
+      margin-top: 0.25rem;
+    }
+
+    .code-box {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.78rem;
+      background: transparent;
+      padding: 1rem;
+      overflow-x: auto;
+      color: #e2e8f0;
+      line-height: 1.55;
+      margin: 0;
+    }
+
+    .code-box code {
+      background: transparent !important;
+      padding: 0 !important;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>NestJS Passport Flow & CRC</h1>
+    <p class="subtitle">카드를 클릭하여 역할, 책임, 동작 및 코드 에디터 스타일의 실제 소스코드를 확인하세요</p>
+  </header>
+
+  <div class="main-layout">
+    
+    <!-- 1. 좌측 다이어그램 영역 -->
+    <div class="diagram-container">
+      
+      <svg class="connector-svg" width="720" height="500" xmlns="http://www.w3.org/2000/svg" style="position: absolute; top:0; left:0; pointer-events:none; z-index:1;">
+        <defs>
+          <marker id="arrow-r" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1 L 10 5 L 0 9 z" fill="rgba(255,255,255,0.3)" />
+          </marker>
+          <marker id="arrow-g" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1 L 10 5 L 0 9 z" fill="var(--color-guard)" />
+          </marker>
+          <marker id="arrow-v" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1 L 10 5 L 0 9 z" fill="var(--color-engine)" />
+          </marker>
+          <marker id="arrow-a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1 L 10 5 L 0 9 z" fill="var(--color-strategy)" />
+          </marker>
+        </defs>
+
+        <!-- 1. Request -> AuthGuard -->
+        <path class="arrow-path" d="M 10,95 L 25,95" marker-end="url(#arrow-r)" />
+
+        <!-- 2. AuthGuard -> Passport Engine -->
+        <path class="arrow-path active" d="M 195,95 L 255,95" marker-end="url(#arrow-v)" />
+        <circle cx="225" cy="95" r="9" fill="var(--color-engine)" />
+        <text class="arrow-num" x="222" y="98">1</text>
+
+        <!-- 3. Passport Engine -> LocalStrategy -->
+        <path class="arrow-path active" d="M 340,140 L 340,360" marker-end="url(#arrow-a)" />
+        <circle cx="340" cy="250" r="9" fill="var(--color-strategy)" />
+        <text class="arrow-num" x="337" y="253">2</text>
+
+        <!-- 4. LocalStrategy -> AuthService -->
+        <path class="arrow-path active" d="M 425,390 L 495,280" marker-end="url(#arrow-r)" />
+        <circle cx="460" cy="335" r="9" fill="var(--color-service)" />
+        <text class="arrow-num" x="457" y="338">3</text>
+
+        <!-- 5. AuthService -> LocalStrategy (Return) -->
+        <path class="arrow-path dashed" d="M 495,290 L 425,400" marker-end="url(#arrow-r)" />
+        <circle cx="460" cy="355" r="9" fill="var(--text-sub)" />
+        <text class="arrow-num" x="457" y="358">4</text>
+
+        <!-- 6. LocalStrategy -> Passport Engine (Return) -->
+        <path class="arrow-path dashed" d="M 320,360 L 320,140" marker-end="url(#arrow-r)" />
+        <circle cx="320" cy="250" r="9" fill="var(--text-sub)" />
+        <text class="arrow-num" x="317" y="253">5</text>
+
+        <!-- 7. Passport Engine -> AuthController -->
+        <path class="arrow-path success" d="M 255,120 L 195,360" marker-end="url(#arrow-g)" />
+        <circle cx="225" cy="240" r="9" fill="var(--color-guard)" />
+        <text class="arrow-num" x="222" y="243">6</text>
+
+        <!-- 8. AuthController -> Response -->
+        <path class="arrow-path success" d="M 25,405 L 10,405" marker-end="url(#arrow-g)" />
+
+      </svg>
+
+      <!-- Web Layer -->
+      <div class="layer-box layer-web" style="left: 10px; top: 10px; width: 200px; height: 480px;">
+        <span class="layer-title">NestJS Web Layer</span>
+      </div>
+      <div class="card card-guard" style="left: 25px; top: 50px;" onclick="inspect('guard')">
+        <h2 class="card-title">AuthGuard</h2>
+        <span class="card-sub">CanActivate</span>
+      </div>
+      <div class="card card-controller" style="left: 25px; top: 360px;" onclick="inspect('controller')">
+        <h2 class="card-title">AuthController</h2>
+        <span class="card-sub">Controller</span>
+      </div>
+
+      <!-- Passport Layer -->
+      <div class="layer-box layer-passport" style="left: 230px; top: 10px; width: 220px; height: 480px;">
+        <span class="layer-title">Passport Adapter Layer</span>
+      </div>
+      <div class="card card-engine" style="left: 255px; top: 50px;" onclick="inspect('engine')">
+        <h2 class="card-title">Passport Engine</h2>
+        <span class="card-sub">@nestjs/passport</span>
+      </div>
+      <div class="card card-strategy" style="left: 255px; top: 360px;" onclick="inspect('strategy')">
+        <h2 class="card-title">LocalStrategy</h2>
+        <span class="card-sub">PassportStrategy</span>
+      </div>
+
+      <!-- Service Layer -->
+      <div class="layer-box layer-service" style="left: 470px; top: 10px; width: 220px; height: 480px;">
+        <span class="layer-title">Business Logic Layer</span>
+      </div>
+      <div class="card card-service" style="left: 495px; top: 205px;" onclick="inspect('service')">
+        <h2 class="card-title">AuthService</h2>
+        <span class="card-sub">Service</span>
+      </div>
+
+    </div>
+
+    <!-- 2. 우측 상세 인스펙터 패널 -->
+    <div class="inspector-panel" id="inspector">
+      <div class="inspector-header">
+        <h2 class="inspector-title" id="ins-title">카드를 선택해 주세요</h2>
+        <span class="inspector-sub" id="ins-sub">구조 상세 정보 검사기</span>
+      </div>
+      <div class="yaml-box" id="ins-yaml">
+왼쪽 다이어그램에서 궁금한 컴포넌트 카드를 클릭하시면
+해당 컴포넌트의 역할(Role), 책임(Responsibility), 아는 것(Knowledge), 
+하는 것(Action) 정보 및 실제 개발자가 작성하는 소스코드가 출력됩니다.
+      </div>
+      <div style="display:none;" id="code-section">
+        <h3 class="code-title" id="ins-code-title">실제 내가 작성하는 소스코드</h3>
+        <div class="editor-container">
+          <div class="editor-tab-header">
+            <span class="tab-circle tc-red"></span>
+            <span class="tab-circle tc-yellow"></span>
+            <span class="tab-circle tc-green"></span>
+            <span class="tab-title" id="ins-tab-filename">code.ts</span>
+          </div>
+          <pre class="code-box"><code id="ins-code" class="language-typescript"></code></pre>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    const data = {
+      guard: {
+        title: "AuthGuard",
+        sub: "CanActivate",
+        color: "var(--color-guard)",
+        filename: "local-auth.guard.ts",
+        yaml: `<span class="yaml-key">역할</span>: <span class="yaml-role">"라우트 진입로를 보호하는 문지기"</span>
+<span class="yaml-key">책임</span>:
+  - "비인증된 요청의 컨트롤러 진입 차단"
+  - "인증 실패 시 즉시 HTTP 401 예외 반환"
+<span class="yaml-key">아는_것</span>:
+  - "사용할 인증 전략의 이름 ('local')"
+  - "NestJS의 실행 콘텍스트 (ExecutionContext)"
+<span class="yaml-key">하는_것</span>:
+  - "HTTP 요청을 가로채서 Passport 엔진 작동 유도"
+  - "Passport의 검증 완료 후 라우트 통과(next) 여부 결정"`,
+        code: `import { Injectable } from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
+
+@UseGuards(AuthGuard('local')) // 컨트롤러 핸들러 상단에 바로 사용할 수도 있고,
+
+// 아래와 같이 커스텀 가드로 정의해서 사용할 수도 있습니다.
+@Injectable()
+export class LocalAuthGuard extends AuthGuard('local') {}`
+      },
+      controller: {
+        title: "AuthController",
+        sub: "Controller",
+        color: "var(--color-controller)",
+        filename: "auth.controller.ts",
+        yaml: `<span class="yaml-key">역할</span>: <span class="yaml-role">"최종 엔드포인트 수신 및 응답기"</span>
+<span class="yaml-key">책임</span>:
+  - "로그인 API 라우트 경로 정의"
+  - "가드가 주입해 준 req.user 유저 정보를 최종 응답으로 전달"
+<span class="yaml-key">아는_것</span>:
+  - "API URL 주소 경로"
+  - "가드 통과 후 요청 객체에 탑재된 검증 완료 유저 객체 (req.user)"
+<span class="yaml-key">하는_것</span>:
+  - "@Post('login') 핸들러 정의"
+  - "성공 시 가드가 주입해 준 req.user를 그대로 JSON 형태로 반환"`,
+        code: `import { Controller, Post, Request, UseGuards } from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
+
+@Controller('auth')
+export class AuthController {
+
+  @UseGuards(AuthGuard('local')) // 1. Passport 로컬 가드를 태웁니다.
+  @Post('login')
+  login(@Request() req) {
+    // 2. 검증 완료 시 가드가 주입해 준 req.user 객체를 반환합니다.
+    return req.user; 
+  }
+}`
+      },
+      engine: {
+        title: "Passport Engine",
+        sub: "@nestjs/passport",
+        color: "var(--color-engine)",
+        filename: "auth.module.ts",
+        yaml: `<span class="yaml-key">역할</span>: <span class="yaml-role">"Passport 라이브러리 연동용 중개 어댑터"</span>
+<span class="yaml-key">책임</span>:
+  - "요청 객체에서 데이터 자동 추출 및 Strategy 매핑 실행"
+<span class="yaml-key">아는_것</span>:
+  - "Express HTTP Request 객체 자체"
+  - "전역적으로 등록된 Strategy 클래스 매핑 리스트"
+<span class="yaml-key">하는_것</span>:
+  - "body에서 매핑된 필드(email, password)를 자동으로 파싱"
+  - "LocalStrategy의 validate() 콜백 메서드를 매개변수 바인딩하여 호출"
+  - "최종 반환 객체를 req.user에 주입"`,
+        code: `// 직접 구현할 코드는 없고 라이브러리 모듈 등록만 작성합니다.
+import { Module } from '@nestjs/common';
+import { PassportModule } from '@nestjs/passport';
+import { LocalStrategy } from './local.strategy';
+
+@Module({
+  imports: [
+    PassportModule // 1. PassportModule을 모듈에 등록해 활성화합니다.
+  ],
+  providers: [
+    LocalStrategy  // 2. LocalStrategy 인스턴스가 주입될 수 있게 제공합니다.
+  ]
+})
+export class AuthModule {}`
+      },
+      strategy: {
+        title: "LocalStrategy",
+        sub: "PassportStrategy(Strategy)",
+        color: "var(--color-strategy)",
+        filename: "local.strategy.ts",
+        yaml: `<span class="yaml-key">역할</span>: <span class="yaml-role">"인증 설정 정의 및 검증 가교"</span>
+<span class="yaml-key">책임</span>:
+  - "필드 설정 제공, AuthService로 검증 위임, 민감 데이터 가공"
+<span class="yaml-key">아는_것</span>:
+  - "추출하려는 데이터 필드명 ('email')"
+  - "검증을 위임할 서비스 (AuthService)"
+<span class="yaml-key">하는_것</span>:
+  - "super({ usernameField: 'email' }) 생성자 설정으로 Passport 필드 재매핑"
+  - "AuthService.validateUser()를 호출해 검증 위임"
+  - "반환값에서 passwordHash 등 민감값을 제거하여 Passport로 반환"`,
+        code: `import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { PassportStrategy } from '@nestjs/passport';
+import { Strategy } from 'passport-local';
+import { AuthService } from './auth.service';
+
+@Injectable()
+export class LocalStrategy extends PassportStrategy(Strategy) {
+  constructor(private authService: AuthService) {
+    // 1. Passport가 Body에서 'username' 대신 'email'을 찾도록 세팅합니다.
+    super({ usernameField: 'email' }); 
+  }
+
+  async validate(email: string, password: string): Promise<any> {
+    // 2. 파싱되어 매핑된 인자들을 가지고 서비스에 검증을 요청합니다.
+    const user = await this.authService.validateUser(email, password);
+    if (!user) {
+      throw new UnauthorizedException(); // 실패 시 401 에러
+    }
+    const { passwordHash, ...rest } = user;
+    return rest; // 3. 검증 성공 유저를 반환 (req.user에 주입됨)
+  }
+}`
+      },
+      service: {
+        title: "AuthService",
+        sub: "Service",
+        color: "var(--color-service)",
+        filename: "auth.service.ts",
+        yaml: `<span class="yaml-key">역할</span>: <span class="yaml-role">"DB 조회 및 비밀번호 실질 검증기"</span>
+<span class="yaml-key">책임</span>:
+  - "DB 유저 유무 조회 및 패스워드 Bcrypt 일치 판별"
+<span class="yaml-key">아는_것</span>:
+  - "유저 데이터베이스 접근 수단 (UserRepository/UsersService)"
+  - "암호 검증에 대한 Bcrypt 라이브러리 기능"
+<span class="yaml-key">하는_것</span>:
+  - "이메일로 사용자를 DB에서 조회"
+  - "입력 비밀번호와 DB의 bcrypt 해시를 비교하여 검증"`,
+        code: `import { Injectable } from '@nestjs/common';
+import { UsersService } from '../users/users.service';
+import * as bcrypt from 'bcrypt';
+
+@Injectable()
+export class AuthService {
+  constructor(private userService: UsersService) {}
+
+  async validateUser(email: string, password: string): Promise<any> {
+    // 1. DB에서 이메일로 사용자 레코드를 조회합니다.
+    const user = await this.userService.findByEmail(email);
+    
+    // 2. 입력 암호와 DB 해시 암호를 Bcrypt 모듈로 대조합니다.
+    if (user && await bcrypt.compare(password, user.passwordHash)) {
+      return user; // 성공 시 유저 전체 반환
+    }
+    return null; // 실패 시 null 반환
+  }
+}`
+      }
+    };
+
+    function inspect(key) {
+      document.querySelectorAll('.card').forEach(c => c.classList.remove('selected'));
+      event.currentTarget.classList.add('selected');
+
+      const info = data[key];
+      const titleElem = document.getElementById('ins-title');
+      const subElem = document.getElementById('ins-sub');
+      const yamlElem = document.getElementById('ins-yaml');
+      const codeSection = document.getElementById('code-section');
+      const codeElem = document.getElementById('ins-code');
+      const tabFilename = document.getElementById('ins-tab-filename');
+
+      titleElem.textContent = info.title;
+      titleElem.style.color = info.color;
+      subElem.textContent = info.sub;
+      yamlElem.innerHTML = info.yaml;
+      
+      tabFilename.textContent = info.filename;
+      codeElem.textContent = info.code; // textContent로 안전하게 문자열 삽입
+
+      codeSection.style.display = 'block';
+
+      // Highlight.js를 통한 문법 강조 적용
+      hljs.highlightElement(codeElem);
+    }
+  </script>
+
+</body>
+</html>

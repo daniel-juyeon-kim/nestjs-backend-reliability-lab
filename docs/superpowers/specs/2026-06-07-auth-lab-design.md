@@ -4,7 +4,7 @@
 
 이 프로젝트는 인증, JWT, 세션, Passport, Redis, 동시성, 메시지큐를 직접 구현하면서 학습하기 위한 백엔드 실습 프로젝트다. 하나의 정답 인증 방식만 익히는 것이 아니라, 여러 인증 방식을 직접 구현하고 비교하면서 각각의 장단점과 사용 맥락을 이해하는 것을 목표로 한다.
 
-완성된 인증 서버를 제공하는 것이 목적이 아니다. 프로젝트는 실행 가능한 얇은 NestJS 스켈레톤을 먼저 만들고, 핵심 인증 로직은 과제로 남긴다. 학습자는 과제 요구사항을 보고 직접 코드를 작성하고, 에이전트는 구현 후 코드 리뷰와 피드백을 제공한다.
+완성된 인증 서버를 한 번에 제공하는 것이 목적이 아니다. 프로젝트는 실행 가능한 NestJS 인증 백엔드를 점진적으로 만들고, 각 인증 개념을 작은 단위로 구현한 뒤 테스트와 코드 리뷰로 검증한다. 학습자는 핵심 인증 로직을 직접 작성하고, 에이전트는 구현 후 코드 리뷰, 테스트 보강, 인프라 정리를 지원한다.
 
 ## 학습 원칙
 
@@ -29,11 +29,9 @@
 - 테스트: Jest 기반 unit test, e2e test
 - 패키지 매니저: npm
 
-## 초기 스켈레톤 범위
+## 현재 구현 상태
 
-초기 스켈레톤은 학습자가 바로 과제를 시작할 수 있는 환경까지만 제공한다.
-
-포함한다:
+현재 프로젝트는 초기 스켈레톤 단계를 지나 Local Auth, JWT Access Token, e2e 테스트 기반까지 구현했다.
 
 - NestJS 애플리케이션 기본 구조
 - `compose.yml` 기반 MySQL, Redis 실행 환경
@@ -42,26 +40,28 @@
 - `HealthModule`
 - `UsersModule`
 - `AuthModule`
-- 기본 테스트 설정
-- 첫 번째 과제 문서
+- Passport local strategy
+- Passport JWT strategy
+- JWT guard
+- 회원가입 API
+- 로그인 API
+- 현재 사용자 조회 API
+- JWT 설정의 `@nestjs/config` 분리
+- MySQL 기반 e2e 테스트 환경
+- e2e 테스트 전용 DB `learn_auth_test`
+- Refresh Token 저장용 `refresh_tokens` 테이블
 - `.env.example`
-- 로컬 실행 방법 문서
 
-포함하지 않는다:
+아직 구현하지 않는다:
 
-- 완성된 회원가입 로직
-- 완성된 로그인 로직
-- 완성된 JWT 발급 로직
 - 완성된 refresh token 회전 로직
 - 완성된 Redis rate limit
 - 완성된 동시성 제어 코드
 - 완성된 BullMQ worker
 
-스켈레톤에는 빈 메서드, 인터페이스, DTO, Entity, 테스트 골격, 과제 마커를 둔다. 과제 마커는 학습자가 구현해야 할 위치를 알려주기 위한 것이며, 정답 흐름을 모두 드러내지는 않는다.
-
 ## 프로젝트 구조 초안
 
-초기 구조는 다음 형태를 기준으로 한다.
+현재 구조는 다음 형태를 기준으로 한다.
 
 ```text
 src/
@@ -69,11 +69,10 @@ src/
   main.ts
   config/
     env.schema.ts
-    app.config.ts
-    typeorm.config.ts
+    config.module.ts
+    database.config.ts
   health/
     health.controller.ts
-    health.service.ts
     health.module.ts
   users/
     entities/user.entity.ts
@@ -86,17 +85,15 @@ src/
     auth.service.ts
     dto/register.dto.ts
     dto/login.dto.ts
-    dto/auth-response.dto.ts
+    dto/jwt.payload.dto.ts
+    entities/refresh-token.entity.ts
+    refresh-token.repository.ts
     strategies/local.strategy.ts
     strategies/jwt.strategy.ts
     guards/local-auth.guard.ts
     guards/jwt-auth.guard.ts
 test/
   auth.e2e-spec.ts
-  health.e2e-spec.ts
-docs/
-  assignments/
-    01-local-auth-jwt.md
 ```
 
 이 구조는 구현 중 더 작게 나눌 수 있다. 단, 과제의 핵심을 흐리지 않는 범위에서만 분리한다.
@@ -125,15 +122,18 @@ docs/
 
 ### 구현할 기능
 
-- 회원가입
-- 이메일 중복 검사
-- 비밀번호 해싱
-- 로그인
-- Passport local strategy
-- JWT access token 발급
-- Passport JWT strategy
-- JWT guard
-- 현재 로그인한 사용자 조회 API
+- [x] 회원가입 서비스 레이어
+- [x] 이메일 중복 검사
+- [x] 비밀번호 해싱
+- [x] 로그인 서비스 레이어
+- [x] Passport local strategy
+- [x] JWT access token 발급
+- [x] Passport JWT strategy
+- [x] JWT guard
+- [x] 현재 로그인한 사용자 조회 API
+- [x] MySQL 기반 auth e2e test
+- [x] e2e 테스트 DB 격리
+- [x] JWT secret 설정 분리
 
 ### 예상 API
 
@@ -145,7 +145,11 @@ GET /auth/me
 
 `POST /auth/register`는 이메일과 비밀번호를 받아 사용자를 생성한다.
 
+진행 상태: `AuthService.register()` 기준 회원가입 서비스 레이어 구현과 빌드 검증을 완료했다.
+
 `POST /auth/login`은 이메일과 비밀번호를 검증하고 access token을 반환한다.
+
+진행 상태: `AuthService.login()` 기준 로그인 서비스 레이어 구현과 빌드 검증을 완료했다.
 
 `GET /auth/me`는 JWT access token이 있을 때만 현재 사용자 정보를 반환한다.
 
@@ -290,15 +294,15 @@ Access token은 짧게 유지하고, refresh token은 서버 세션과 연결한
 
 ### 구현할 기능
 
-- 로그인 시 세션 생성
-- access token과 refresh token 발급
-- refresh token 해시 저장
-- refresh token 재발급
-- refresh token rotation
-- 로그아웃
-- 세션 만료
-- 세션 폐기
-- refresh token 재사용 감지
+- [x] refresh token 저장 테이블 생성
+- [x] 로그인 시 access token과 refresh token 발급
+- [x] refresh token 해시 저장
+- [ ] refresh token 재발급
+- [ ] refresh token rotation
+- [ ] 로그아웃
+- [ ] refresh token 만료 처리
+- [ ] refresh token 폐기
+- [ ] refresh token 재사용 감지
 
 ### 예상 API
 
@@ -320,43 +324,39 @@ DELETE /auth/sessions/:sessionId
 
 ### 데이터 모델
 
-`auth_sessions` 테이블은 최소한 다음 필드를 가진다.
+현재 단계에서는 `refresh_tokens` 테이블을 먼저 사용한다.
 
 - `id`
 - `userId`
-- `refreshTokenHash`
-- `userAgent`
-- `ipAddress`
+- `tokenHash`
 - `expiresAt`
 - `revokedAt`
-- `lastUsedAt`
 - `createdAt`
 - `updatedAt`
 
-`refreshTokenHash`는 평문 refresh token을 저장하면 안 된다.
+`tokenHash`는 평문 refresh token을 저장하면 안 된다.
+
+나중에 여러 기기 세션, 사용자 agent, IP, 세션 목록 API를 다룰 때 `auth_sessions` 모델로 확장할 수 있다.
 
 ### 직접 구현해야 하는 부분
 
-- 세션 Entity 설계
-- 로그인 시 세션 생성
-- refresh token 생성
-- refresh token hash 저장
+- refresh token 재발급 API
 - refresh token 검증
 - refresh token rotation
-- 폐기된 세션 처리
-- 만료된 세션 처리
+- 폐기된 refresh token 처리
+- 만료된 refresh token 처리
 - 재사용 감지 정책 결정
-- 세션 목록 API
+- 로그아웃 API
 
 ### 검증 기준
 
-- 로그인할 때마다 새 세션이 생성된다.
+- 로그인할 때마다 새 refresh token이 생성된다.
 - refresh token은 DB에 평문으로 저장되지 않는다.
 - refresh 요청이 성공하면 기존 refresh token은 더 이상 사용할 수 없다.
 - 로그아웃 후 같은 refresh token으로 재발급할 수 없다.
-- 만료된 세션은 refresh에 실패한다.
-- 폐기된 세션은 refresh에 실패한다.
-- 세션 목록에는 민감한 token hash가 포함되지 않는다.
+- 만료된 refresh token은 refresh에 실패한다.
+- 폐기된 refresh token은 refresh에 실패한다.
+- API 응답에는 민감한 token hash가 포함되지 않는다.
 
 ## 과제 3: Redis 기반 인증 상태 관리
 
@@ -637,18 +637,16 @@ npm run test
 npm run test:e2e
 ```
 
-## 초기 구현 계획에서 정할 것
+## 확정된 구현 기준
 
-스펙은 방향을 고정하고, 실제 구현 계획에서는 다음을 더 구체화한다.
+프로젝트 방향은 다음 기준으로 고정한다.
 
-- NestJS 프로젝트 생성 방식
-- 정확한 npm script
-- TypeORM migration 사용 여부
-- `.env.example` 필드 목록
-- MySQL database 이름과 계정
-- Redis database 사용 방식
-- 테스트 DB 초기화 방식
-- 첫 번째 과제에서 제공할 실패 테스트 범위
+- NestJS 인증 학습 백엔드로 유지한다.
+- MySQL과 TypeORM을 기본 데이터 저장 계층으로 사용한다.
+- Passport 기반 local, JWT, session, API key, OAuth/OIDC 실습을 순차적으로 진행한다.
+- Redis와 BullMQ는 후속 과제에서 인증 상태 관리와 메시지큐 학습에 사용한다.
+- 프론트엔드, FastAPI, Supabase, PostgreSQL은 이 저장소 범위에 포함하지 않는다.
+- 첫 번째 정리 목표는 빌드 가능한 NestJS 기준선을 만드는 것이다.
 
 ## 하지 않을 것
 
