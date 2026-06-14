@@ -297,7 +297,7 @@ Access token은 짧게 유지하고, refresh token은 서버 세션과 연결한
 - [x] refresh token 저장 테이블 생성
 - [x] 로그인 시 access token과 refresh token 발급
 - [x] refresh token 해시 저장
-- [ ] refresh token 재발급
+- [x] refresh token으로 access token 재발급
 - [ ] refresh token rotation
 - [ ] 로그아웃
 - [ ] refresh token 만료 처리
@@ -314,7 +314,9 @@ GET /auth/sessions
 DELETE /auth/sessions/:sessionId
 ```
 
-`POST /auth/refresh`는 refresh token을 받아 새 access token과 새 refresh token을 발급한다.
+`POST /auth/refresh`는 refresh token을 받아 유효한 active token hash와 비교한 뒤 새 access token을 발급한다.
+
+현재 단계에서는 rotation을 적용하지 않는다. 즉 refresh 성공 시 새 refresh token은 아직 발급하지 않고, 기존 refresh token도 폐기하지 않는다. Rotation은 다음 학습 단계에서 구현한다.
 
 `POST /auth/logout`은 현재 세션을 폐기한다.
 
@@ -340,8 +342,8 @@ DELETE /auth/sessions/:sessionId
 
 ### 직접 구현해야 하는 부분
 
-- refresh token 재발급 API
-- refresh token 검증
+- [x] refresh token 재발급 API
+- [x] refresh token 검증
 - refresh token rotation
 - 폐기된 refresh token 처리
 - 만료된 refresh token 처리
@@ -352,7 +354,8 @@ DELETE /auth/sessions/:sessionId
 
 - 로그인할 때마다 새 refresh token이 생성된다.
 - refresh token은 DB에 평문으로 저장되지 않는다.
-- refresh 요청이 성공하면 기존 refresh token은 더 이상 사용할 수 없다.
+- refresh 요청이 성공하면 새 access token을 받을 수 있다.
+- rotation 단계 이후에는 refresh 요청이 성공하면 기존 refresh token은 더 이상 사용할 수 없다.
 - 로그아웃 후 같은 refresh token으로 재발급할 수 없다.
 - 만료된 refresh token은 refresh에 실패한다.
 - 폐기된 refresh token은 refresh에 실패한다.
