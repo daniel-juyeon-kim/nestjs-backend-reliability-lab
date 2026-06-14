@@ -1,4 +1,4 @@
-import { ConflictException } from '@nestjs/common';
+import { ConflictException, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { UsersService } from 'src/users/users.service';
@@ -35,6 +35,9 @@ describe('AuthService', () => {
     create: jest.MockedFunction<
       (refreshToken: Partial<RefreshToken>) => Promise<RefreshToken>
     >;
+    findAllAliveTokensByTime: jest.MockedFunction<
+      (date: Date) => Promise<RefreshToken[]>
+    >;
   };
 
   beforeEach(() => {
@@ -48,6 +51,7 @@ describe('AuthService', () => {
     };
     refreshTokenRepository = {
       create: jest.fn(),
+      findAllAliveTokensByTime: jest.fn(),
     };
 
     service = new AuthService(
@@ -167,4 +171,89 @@ describe('AuthService', () => {
       ).resolves.toBe(true);
     });
   });
+
+  describe('refreshAccessToken', () => {
+    it('유효한 refreshToken이면 accessToken을 재발급한다', async () => {
+      const refreshToken = 'refresh-token';
+      const tokenHash = await bcrypt.hash(refreshToken, 10);
+
+      refreshTokenRepository.findAllAliveTokensByTime.mockResolvedValue([
+        createRefreshTokenFixture({
+          userId: 'user-1',
+          tokenHash,
+        }),
+      ]);
+      usersService.findById.mockResolvedValue({
+        id: 'user-1',
+        email: 'user@example.com',
+        passwordHash: 'hashed-password',
+      });
+      jwtService.signAsync.mockResolvedValue('new-access-token');
+
+      const result = await service.refreshAccessToken({ refreshToken });
+
+      expect(
+        refreshTokenRepository.findAllAliveTokensByTime,
+      ).toHaveBeenCalledWith(expect.any(Date));
+      expect(usersService.findById).toHaveBeenCalledWith('user-1');
+      expect(jwtService.signAsync).toHaveBeenCalledWith({
+        sub: 'user-1',
+        email: 'user@example.com',
+      });
+      expect(result).toEqual({ accessToken: 'new-access-token' });
+    });
+
+    it('일치하는 refreshToken이 없으면 UnauthorizedException을 던진다', async () => {
+      const tokenHash = await bcrypt.hash('different-refresh-token', 10);
+
+      refreshTokenRepository.findAllAliveTokensByTime.mockResolvedValue([
+        createRefreshTokenFixture({
+          userId: 'user-1',
+          tokenHash,
+        }),
+      ]);
+
+      await expect(
+        service.refreshAccessToken({ refreshToken: 'refresh-token' }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+
+      expect(usersService.findById).not.toHaveBeenCalled();
+      expect(jwtService.signAsync).not.toHaveBeenCalled();
+    });
+
+    it('refreshToken의 사용자가 없으면 UnauthorizedException을 던진다', async () => {
+      const refreshToken = 'refresh-token';
+      const tokenHash = await bcrypt.hash(refreshToken, 10);
+
+      refreshTokenRepository.findAllAliveTokensByTime.mockResolvedValue([
+        createRefreshTokenFixture({
+          userId: 'missing-user',
+          tokenHash,
+        }),
+      ]);
+      usersService.findById.mockResolvedValue(null);
+
+      await expect(
+        service.refreshAccessToken({ refreshToken }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+
+      expect(jwtService.signAsync).not.toHaveBeenCalled();
+    });
+  });
 });
+
+function createRefreshTokenFixture(
+  overrides: Partial<RefreshToken> = {},
+): RefreshToken {
+  return {
+    id: 'refresh-token-1',
+    userId: 'user-1',
+    user: {} as RefreshToken['user'],
+    tokenHash: 'hashed-refresh-token',
+    expiresAt: new Date(Date.now() + 1000 * 60 * 60),
+    revokedAt: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    ...overrides,
+  };
+}

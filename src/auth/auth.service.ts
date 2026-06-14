@@ -1,9 +1,14 @@
-import { ConflictException, Injectable } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
 import { UsersService } from 'src/users/users.service';
 import { JwtPayloadDto } from './dto/jwt.payload.dto';
+import { RefreshTokenDto } from './dto/refresh.dto';
 import { RegisterDto } from './dto/register.dto';
 import { RefreshToken } from './entities/refresh-token.entity';
 import { RefreshTokenRepository } from './refresh-token.repository';
@@ -64,5 +69,40 @@ export class AuthService {
     await this.refreshTokenRepository.create(refreshTokenEntity);
 
     return { accessToken, refreshToken };
+  }
+
+  async refreshAccessToken({ refreshToken }: RefreshTokenDto) {
+    const token = await this.findMatchRefreshToken(refreshToken);
+
+    if (token === null) {
+      throw new UnauthorizedException();
+    }
+
+    const user = await this.userService.findById(token.userId);
+
+    if (user === null) {
+      throw new UnauthorizedException();
+    }
+
+    const accessToken = await this.jwtService.signAsync<JwtPayloadDto>({
+      sub: user.id,
+      email: user.email,
+    });
+
+    return { accessToken };
+  }
+
+  private async findMatchRefreshToken(refreshToken: string) {
+    const tokens = await this.refreshTokenRepository.findAllAliveTokensByTime(
+      new Date(),
+    );
+
+    for (const token of tokens) {
+      if (await bcrypt.compare(refreshToken, token.tokenHash)) {
+        return token;
+      }
+    }
+
+    return null;
   }
 }
