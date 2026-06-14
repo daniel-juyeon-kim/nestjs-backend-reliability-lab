@@ -124,4 +124,16 @@ export class AuthService {
 
     return null;
   }
+
+  async logout(dto: RefreshTokenDto) {
+    const token = await this.findMatchRefreshToken(dto.refreshToken);
+
+    if (token === null) {
+      throw new UnauthorizedException();
+    }
+
+    const refreshTokenId = token.id;
+
+    await this.refreshTokenRepository.revokeById(refreshTokenId);
+  }
 }

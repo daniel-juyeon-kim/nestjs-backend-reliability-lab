@@ -275,6 +275,46 @@ describe('AuthService', () => {
       expect(refreshTokenRepository.create).not.toHaveBeenCalled();
     });
   });
+
+  describe('logout', () => {
+    it('유효한 refreshToken이면 해당 토큰을 폐기한다', async () => {
+      const refreshToken = 'refresh-token';
+      const tokenHash = await bcrypt.hash(refreshToken, 10);
+
+      refreshTokenRepository.findAllAliveTokensByTime.mockResolvedValue([
+        createRefreshTokenFixture({
+          id: 'refresh-token-1',
+          tokenHash,
+        }),
+      ]);
+      refreshTokenRepository.revokeById.mockResolvedValue(undefined);
+
+      await service.logout({ refreshToken });
+
+      expect(
+        refreshTokenRepository.findAllAliveTokensByTime,
+      ).toHaveBeenCalledWith(expect.any(Date));
+      expect(refreshTokenRepository.revokeById).toHaveBeenCalledWith(
+        'refresh-token-1',
+      );
+    });
+
+    it('일치하는 refreshToken이 없으면 UnauthorizedException을 던진다', async () => {
+      const tokenHash = await bcrypt.hash('different-refresh-token', 10);
+
+      refreshTokenRepository.findAllAliveTokensByTime.mockResolvedValue([
+        createRefreshTokenFixture({
+          tokenHash,
+        }),
+      ]);
+
+      await expect(
+        service.logout({ refreshToken: 'refresh-token' }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+
+      expect(refreshTokenRepository.revokeById).not.toHaveBeenCalled();
+    });
+  });
 });
 
 function createRefreshTokenFixture(

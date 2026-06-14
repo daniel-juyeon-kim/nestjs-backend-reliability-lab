@@ -18,6 +18,7 @@ type CurrentUserResponse = {
 
 type LoginResponse = {
   accessToken: string;
+  refreshToken: string;
 };
 
 function assertE2eDatabase() {
@@ -109,5 +110,33 @@ describe('Auth e2e', () => {
 
   it('Bearer 토큰이 없으면 현재 사용자 조회를 거부한다', async () => {
     await request(httpServer).get('/auth/me').expect(401);
+  });
+
+  it('로그아웃 후 같은 refreshToken으로 accessToken을 재발급할 수 없다', async () => {
+    const email = 'logout-user@example.com';
+    const password = 'password123';
+
+    await request(httpServer)
+      .post('/auth/register')
+      .send({ email, password })
+      .expect(201);
+
+    const loginResponse = await request(httpServer)
+      .post('/auth/login')
+      .send({ email, password })
+      .expect(201);
+    const { refreshToken } = loginResponse.body as LoginResponse;
+
+    expect(refreshToken).toEqual(expect.any(String));
+
+    await request(httpServer)
+      .post('/auth/logout')
+      .send({ refreshToken })
+      .expect(201);
+
+    await request(httpServer)
+      .post('/auth/refresh')
+      .send({ refreshToken })
+      .expect(401);
   });
 });

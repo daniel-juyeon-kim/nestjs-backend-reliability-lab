@@ -299,7 +299,7 @@ Access token은 짧게 유지하고, refresh token은 서버 세션과 연결한
 - [x] refresh token 해시 저장
 - [x] refresh token으로 access token 재발급
 - [x] refresh token rotation
-- [ ] 로그아웃
+- [x] 로그아웃
 - [ ] refresh token 만료 처리
 - [ ] refresh token 폐기
 - [ ] refresh token 재사용 감지
@@ -318,7 +318,7 @@ DELETE /auth/sessions/:sessionId
 
 현재 단계에서는 refresh token rotation을 적용한다. refresh 요청이 성공하면 기존 refresh token은 `revokedAt`으로 폐기하고, 새 refresh token의 hash를 DB에 저장한 뒤 새 access token과 함께 반환한다.
 
-`POST /auth/logout`은 현재 세션을 폐기한다.
+`POST /auth/logout`은 refresh token을 받아 현재 refresh session을 폐기한다. 로그아웃 후 같은 refresh token으로 access token을 재발급할 수 없어야 한다.
 
 `GET /auth/sessions`는 현재 사용자의 활성 세션 목록을 반환한다.
 
@@ -345,10 +345,10 @@ DELETE /auth/sessions/:sessionId
 - [x] refresh token 재발급 API
 - [x] refresh token 검증
 - [x] refresh token rotation
+- [x] 로그아웃 API
 - 폐기된 refresh token 처리
 - 만료된 refresh token 처리
 - 재사용 감지 정책 결정
-- 로그아웃 API
 
 ### 검증 기준
 
