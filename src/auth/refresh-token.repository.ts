@@ -29,6 +29,16 @@ export class RefreshTokenRepository {
     });
   }
 
+  findActiveByUserId(userId: string, date: Date) {
+    return this.refreshTokenRepository.find({
+      where: {
+        userId,
+        expiresAt: MoreThan(date),
+        revokedAt: IsNull(),
+      },
+    });
+  }
+
   revokeById(id: string) {
     return this.refreshTokenRepository.update(id, { revokedAt: new Date() });
   }

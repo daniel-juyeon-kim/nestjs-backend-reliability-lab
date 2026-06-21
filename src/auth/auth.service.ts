@@ -1,6 +1,7 @@
 import {
   ConflictException,
   Injectable,
+  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -152,5 +153,34 @@ export class AuthService {
     const refreshTokenId = token.id;
 
     await this.refreshTokenRepository.revokeById(refreshTokenId);
+  }
+
+  async getSessions({ id }: AuthenticatedUser) {
+    const activeTokens = await this.refreshTokenRepository.findActiveByUserId(
+      id,
+      new Date(),
+    );
+
+    return activeTokens.map(({ id, createdAt, expiresAt }) => ({
+      id,
+      createdAt,
+      expiresAt,
+    }));
+  }
+
+  async revokeSession({ id }: AuthenticatedUser, sessionId: string) {
+    const activeTokens = await this.refreshTokenRepository.findActiveByUserId(
+      id,
+      new Date(),
+    );
+
+    const tokenIds = activeTokens.map((token) => token.id);
+
+    if (tokenIds.includes(sessionId)) {
+      await this.refreshTokenRepository.revokeById(sessionId);
+      return;
+    }
+
+    throw new NotFoundException();
   }
 }

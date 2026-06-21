@@ -8,6 +8,8 @@ describe('AuthController', () => {
     register: jest.Mock;
     login: jest.Mock;
     getMe: jest.Mock;
+    getSessions: jest.Mock;
+    revokeSession: jest.Mock;
   };
 
   beforeEach(() => {
@@ -15,6 +17,8 @@ describe('AuthController', () => {
       register: jest.fn(),
       login: jest.fn(),
       getMe: jest.fn(),
+      getSessions: jest.fn(),
+      revokeSession: jest.fn(),
     };
 
     controller = new AuthController(authService as unknown as AuthService);

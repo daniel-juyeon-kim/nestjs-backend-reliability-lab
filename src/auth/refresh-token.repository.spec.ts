@@ -7,6 +7,7 @@ describe('RefreshTokenRepository', () => {
     find: jest.MockedFunction<
       (options: {
         where: {
+          userId?: string;
           expiresAt: ReturnType<typeof MoreThan>;
           revokedAt?: ReturnType<typeof IsNull>;
         };
@@ -43,6 +44,20 @@ describe('RefreshTokenRepository', () => {
 
     expect(repository.find).toHaveBeenCalledWith({
       where: {
+        expiresAt: MoreThan(now),
+        revokedAt: IsNull(),
+      },
+    });
+  });
+
+  it('session 목록에서 현재 사용자의 active token만 조회한다', async () => {
+    const now = new Date('2026-06-21T12:00:00.000Z');
+
+    await refreshTokenRepository.findActiveByUserId('user-1', now);
+
+    expect(repository.find).toHaveBeenCalledWith({
+      where: {
+        userId: 'user-1',
         expiresAt: MoreThan(now),
         revokedAt: IsNull(),
       },

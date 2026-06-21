@@ -1,4 +1,8 @@
-import { ConflictException, UnauthorizedException } from '@nestjs/common';
+import {
+  ConflictException,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { UsersService } from 'src/users/users.service';
@@ -41,6 +45,9 @@ describe('AuthService', () => {
     findAllAliveTokensByTime: jest.MockedFunction<
       (date: Date) => Promise<RefreshToken[]>
     >;
+    findActiveByUserId: jest.MockedFunction<
+      (userId: string, date: Date) => Promise<RefreshToken[]>
+    >;
     revokeById: jest.MockedFunction<(id: string) => Promise<unknown>>;
     updateRevokedAtByUserId: jest.MockedFunction<
       (userId: string) => Promise<unknown>
@@ -60,6 +67,7 @@ describe('AuthService', () => {
       create: jest.fn(),
       findAllTokensByTime: jest.fn(),
       findAllAliveTokensByTime: jest.fn(),
+      findActiveByUserId: jest.fn(),
       revokeById: jest.fn(),
       updateRevokedAtByUserId: jest.fn(),
     };
@@ -358,6 +366,87 @@ describe('AuthService', () => {
       await expect(
         service.logout({ refreshToken: 'refresh-token' }),
       ).rejects.toBeInstanceOf(UnauthorizedException);
+
+      expect(refreshTokenRepository.revokeById).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getSessions', () => {
+    it('현재 사용자의 active session에서 tokenHash를 제외하고 반환한다', async () => {
+      const createdAt = new Date('2026-06-21T12:00:00.000Z');
+      const expiresAt = new Date('2026-07-05T12:00:00.000Z');
+
+      refreshTokenRepository.findActiveByUserId.mockResolvedValue([
+        createRefreshTokenFixture({
+          id: 'refresh-token-1',
+          tokenHash: 'hidden-token-hash',
+          createdAt,
+          expiresAt,
+        }),
+      ]);
+
+      const result = await service.getSessions({
+        id: 'user-1',
+        email: 'user@example.com',
+      });
+
+      expect(refreshTokenRepository.findActiveByUserId).toHaveBeenCalledWith(
+        'user-1',
+        expect.any(Date),
+      );
+      expect(result).toEqual([
+        {
+          id: 'refresh-token-1',
+          createdAt,
+          expiresAt,
+        },
+      ]);
+      expect(result[0]).not.toHaveProperty('tokenHash');
+    });
+  });
+
+  describe('revokeSession', () => {
+    it('현재 사용자의 active session이면 폐기한다', async () => {
+      refreshTokenRepository.findActiveByUserId.mockResolvedValue([
+        createRefreshTokenFixture({
+          id: 'refresh-token-1',
+        }),
+      ]);
+      refreshTokenRepository.revokeById.mockResolvedValue(undefined);
+
+      await service.revokeSession(
+        {
+          id: 'user-1',
+          email: 'user@example.com',
+        },
+        'refresh-token-1',
+      );
+
+      expect(refreshTokenRepository.findActiveByUserId).toHaveBeenCalledWith(
+        'user-1',
+        expect.any(Date),
+      );
+      expect(refreshTokenRepository.revokeById).toHaveBeenCalledWith(
+        'refresh-token-1',
+      );
+    });
+
+    it('현재 사용자의 active session이 아니면 NotFoundException을 던진다', async () => {
+      refreshTokenRepository.findActiveByUserId.mockResolvedValue([
+        createRefreshTokenFixture({
+          id: 'refresh-token-1',
+        }),
+      ]);
+
+      await expect(
+        service.revokeSession(
+          {
+            id: 'user-1',
+            email: 'user@example.com',
+          },
+          'other-refresh-token',
+        ),
+      ).rejects.toBeInstanceOf(NotFoundException);
 
       expect(refreshTokenRepository.revokeById).not.toHaveBeenCalled();
     });
