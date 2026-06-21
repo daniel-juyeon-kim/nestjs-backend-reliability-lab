@@ -300,9 +300,11 @@ Access token은 짧게 유지하고, refresh token은 서버 세션과 연결한
 - [x] refresh token으로 access token 재발급
 - [x] refresh token rotation
 - [x] 로그아웃
-- [ ] refresh token 만료 처리
-- [ ] refresh token 폐기
+- [x] refresh token 만료 처리
+- [x] refresh token 폐기
 - [x] refresh token 재사용 감지
+- [ ] 활성 세션 목록 조회
+- [ ] 특정 세션 폐기 API
 
 ### 예상 API
 
@@ -320,9 +322,13 @@ DELETE /auth/sessions/:sessionId
 
 `POST /auth/logout`은 refresh token을 받아 현재 refresh session을 폐기한다. 로그아웃 후 같은 refresh token으로 access token을 재발급할 수 없어야 한다.
 
-`GET /auth/sessions`는 현재 사용자의 활성 세션 목록을 반환한다.
+현재 구현은 `refresh_tokens` 테이블과 `revokedAt`으로 refresh token을 폐기한다. 로그아웃은 전달받은 active refresh token 하나만 폐기하고, 폐기된 refresh token 재사용은 해당 사용자의 active refresh token을 모두 폐기한다.
 
-`DELETE /auth/sessions/:sessionId`는 특정 세션을 폐기한다.
+만료 처리는 `expiresAt` 기준으로 한다. refresh와 logout 대상 토큰 조회는 `expiresAt`이 현재 시각보다 큰 토큰만 포함한다.
+
+`GET /auth/sessions`는 현재 사용자의 활성 세션 목록을 반환한다. 아직 구현하지 않았다.
+
+`DELETE /auth/sessions/:sessionId`는 특정 세션을 폐기한다. 아직 구현하지 않았다.
 
 ### 데이터 모델
 
@@ -347,8 +353,10 @@ DELETE /auth/sessions/:sessionId
 - [x] refresh token rotation
 - [x] 로그아웃 API
 - [x] 재사용 감지 정책 결정
-- 폐기된 refresh token 처리
-- 만료된 refresh token 처리
+- [x] 폐기된 refresh token 처리
+- [x] 만료된 refresh token 처리
+- [ ] 활성 세션 목록 조회
+- [ ] 특정 세션 폐기
 
 ### 검증 기준
 
