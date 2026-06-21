@@ -303,8 +303,8 @@ Access token은 짧게 유지하고, refresh token은 서버 세션과 연결한
 - [x] refresh token 만료 처리
 - [x] refresh token 폐기
 - [x] refresh token 재사용 감지
-- [ ] 활성 세션 목록 조회
-- [ ] 특정 세션 폐기 API
+- [x] 활성 세션 목록 조회
+- [x] 특정 세션 폐기 API
 
 ### 예상 API
 
@@ -326,9 +326,9 @@ DELETE /auth/sessions/:sessionId
 
 만료 처리는 `expiresAt` 기준으로 한다. refresh와 logout 대상 토큰 조회는 `expiresAt`이 현재 시각보다 큰 토큰만 포함한다.
 
-`GET /auth/sessions`는 현재 사용자의 활성 세션 목록을 반환한다. 아직 구현하지 않았다.
+`GET /auth/sessions`는 현재 사용자의 활성 세션 목록을 반환한다. JWT access token이 있어야 접근할 수 있고, 현재 사용자의 `revokedAt IS NULL`, `expiresAt > now` refresh token만 반환한다. 응답에는 `tokenHash`를 포함하지 않고 `id`, `createdAt`, `expiresAt`만 포함한다.
 
-`DELETE /auth/sessions/:sessionId`는 특정 세션을 폐기한다. 아직 구현하지 않았다.
+`DELETE /auth/sessions/:sessionId`는 특정 세션을 폐기한다. JWT access token이 있어야 접근할 수 있고, 현재 사용자의 active session만 폐기한다. 존재하지 않거나 다른 사용자의 session이거나 이미 만료/폐기된 session이면 `404 Not Found`를 반환한다.
 
 ### 데이터 모델
 
@@ -355,8 +355,8 @@ DELETE /auth/sessions/:sessionId
 - [x] 재사용 감지 정책 결정
 - [x] 폐기된 refresh token 처리
 - [x] 만료된 refresh token 처리
-- [ ] 활성 세션 목록 조회
-- [ ] 특정 세션 폐기
+- [x] 활성 세션 목록 조회
+- [x] 특정 세션 폐기
 
 ### 검증 기준
 
@@ -370,6 +370,10 @@ DELETE /auth/sessions/:sessionId
 - 폐기된 refresh token은 refresh에 실패한다.
 - 폐기된 refresh token이 재사용되면 해당 사용자의 active refresh token을 모두 폐기한다.
 - API 응답에는 민감한 token hash가 포함되지 않는다.
+- 현재 사용자는 active refresh session 목록을 조회할 수 있다.
+- session 목록 응답에는 `tokenHash`가 포함되지 않는다.
+- 현재 사용자는 본인의 active refresh session을 폐기할 수 있다.
+- 존재하지 않거나 소유하지 않은 session 폐기는 `404 Not Found`를 반환한다.
 
 ## 과제 3: Redis 기반 인증 상태 관리
 
