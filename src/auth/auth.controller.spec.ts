@@ -1,9 +1,6 @@
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
-import {
-  AuthenticatedRequest,
-  AuthenticatedUser,
-} from './types/authenticated-user.type';
+import { AuthenticatedUser } from './types/authenticated-user.type';
 
 describe('AuthController', () => {
   let controller: AuthController;
@@ -28,9 +25,8 @@ describe('AuthController', () => {
       id: 'user-1',
       email: 'user@example.com',
     };
-    const req = { user } as AuthenticatedRequest;
 
-    expect(controller.getMe(req)).toEqual(user);
+    expect(controller.getMe(user)).toEqual(user);
     expect(authService.getMe).not.toHaveBeenCalled();
   });
 });
