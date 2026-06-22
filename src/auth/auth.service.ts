@@ -87,14 +87,17 @@ export class AuthService {
       throw new UnauthorizedException();
     }
 
-    // 정상 흐름
-    const accessToken = await this.jwtService.signAsync<JwtPayloadDto>({
-      sub: user.id,
-      email: user.email,
-    });
+    // 조건부 update로 refresh token 1회 사용권을 선점한다.
+    const result = await this.refreshTokenRepository.revokeActiveById(
+      token.id,
+      user.id,
+      new Date(),
+    );
 
-    // refresh 토큰 폐기
-    await this.refreshTokenRepository.revokeById(token.id);
+    if (result.affected !== 1) {
+      throw new UnauthorizedException();
+    }
+
     // refresh 토큰 생성
     const newRefreshToken = randomBytes(64).toString('hex');
     const tokenHash = await bcrypt.hash(newRefreshToken, 10);
@@ -111,6 +114,12 @@ export class AuthService {
 
     // refresh 토큰 저장
     await this.refreshTokenRepository.create(refreshTokenEntity);
+
+    // 액세스 토큰 생성
+    const accessToken = await this.jwtService.signAsync<JwtPayloadDto>({
+      sub: user.id,
+      email: user.email,
+    });
 
     return { accessToken, refreshToken: newRefreshToken };
   }
@@ -152,7 +161,11 @@ export class AuthService {
 
     const refreshTokenId = token.id;
 
-    await this.refreshTokenRepository.revokeById(refreshTokenId);
+    await this.refreshTokenRepository.revokeActiveById(
+      refreshTokenId,
+      token.userId,
+      new Date(),
+    );
   }
 
   async getSessions({ id }: AuthenticatedUser) {
@@ -177,7 +190,11 @@ export class AuthService {
     const tokenIds = activeTokens.map((token) => token.id);
 
     if (tokenIds.includes(sessionId)) {
-      await this.refreshTokenRepository.revokeById(sessionId);
+      await this.refreshTokenRepository.revokeActiveById(
+        sessionId,
+        id,
+        new Date(),
+      );
       return;
     }
 

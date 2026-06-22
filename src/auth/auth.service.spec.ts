@@ -48,7 +48,13 @@ describe('AuthService', () => {
     findActiveByUserId: jest.MockedFunction<
       (userId: string, date: Date) => Promise<RefreshToken[]>
     >;
-    revokeById: jest.MockedFunction<(id: string) => Promise<unknown>>;
+    revokeActiveById: jest.MockedFunction<
+      (
+        id: string,
+        userId: string,
+        now: Date,
+      ) => Promise<{ affected?: number | null }>
+    >;
     updateRevokedAtByUserId: jest.MockedFunction<
       (userId: string) => Promise<unknown>
     >;
@@ -68,7 +74,7 @@ describe('AuthService', () => {
       findAllTokensByTime: jest.fn(),
       findAllAliveTokensByTime: jest.fn(),
       findActiveByUserId: jest.fn(),
-      revokeById: jest.fn(),
+      revokeActiveById: jest.fn(),
       updateRevokedAtByUserId: jest.fn(),
     };
 
@@ -207,7 +213,9 @@ describe('AuthService', () => {
         passwordHash: 'hashed-password',
       });
       jwtService.signAsync.mockResolvedValue('new-access-token');
-      refreshTokenRepository.revokeById.mockResolvedValue(undefined);
+      refreshTokenRepository.revokeActiveById.mockResolvedValue({
+        affected: 1,
+      });
       refreshTokenRepository.create.mockImplementation((refreshTokenEntity) =>
         Promise.resolve({
           id: 'refresh-token-2',
@@ -232,8 +240,10 @@ describe('AuthService', () => {
         sub: 'user-1',
         email: 'user@example.com',
       });
-      expect(refreshTokenRepository.revokeById).toHaveBeenCalledWith(
+      expect(refreshTokenRepository.revokeActiveById).toHaveBeenCalledWith(
         'refresh-token-1',
+        'user-1',
+        expect.any(Date),
       );
       expect(result.accessToken).toBe('new-access-token');
       expect(result.refreshToken).toEqual(expect.any(String));
@@ -266,7 +276,7 @@ describe('AuthService', () => {
 
       expect(usersService.findById).not.toHaveBeenCalled();
       expect(jwtService.signAsync).not.toHaveBeenCalled();
-      expect(refreshTokenRepository.revokeById).not.toHaveBeenCalled();
+      expect(refreshTokenRepository.revokeActiveById).not.toHaveBeenCalled();
       expect(refreshTokenRepository.create).not.toHaveBeenCalled();
       expect(
         refreshTokenRepository.updateRevokedAtByUserId,
@@ -290,11 +300,43 @@ describe('AuthService', () => {
       ).rejects.toBeInstanceOf(UnauthorizedException);
 
       expect(jwtService.signAsync).not.toHaveBeenCalled();
-      expect(refreshTokenRepository.revokeById).not.toHaveBeenCalled();
+      expect(refreshTokenRepository.revokeActiveById).not.toHaveBeenCalled();
       expect(refreshTokenRepository.create).not.toHaveBeenCalled();
       expect(
         refreshTokenRepository.updateRevokedAtByUserId,
       ).not.toHaveBeenCalled();
+    });
+
+    it('refreshToken 선점에 실패하면 새 토큰을 발급하지 않는다', async () => {
+      const refreshToken = 'refresh-token';
+      const tokenHash = await bcrypt.hash(refreshToken, 10);
+
+      refreshTokenRepository.findAllTokensByTime.mockResolvedValue([
+        createRefreshTokenFixture({
+          userId: 'user-1',
+          tokenHash,
+        }),
+      ]);
+      usersService.findById.mockResolvedValue({
+        id: 'user-1',
+        email: 'user@example.com',
+        passwordHash: 'hashed-password',
+      });
+      refreshTokenRepository.revokeActiveById.mockResolvedValue({
+        affected: 0,
+      });
+
+      await expect(
+        service.refreshAccessToken({ refreshToken }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+
+      expect(refreshTokenRepository.revokeActiveById).toHaveBeenCalledWith(
+        'refresh-token-1',
+        'user-1',
+        expect.any(Date),
+      );
+      expect(jwtService.signAsync).not.toHaveBeenCalled();
+      expect(refreshTokenRepository.create).not.toHaveBeenCalled();
     });
 
     it('폐기된 refreshToken이 재사용되면 사용자의 모든 토큰을 폐기한다', async () => {
@@ -326,7 +368,7 @@ describe('AuthService', () => {
         refreshTokenRepository.updateRevokedAtByUserId,
       ).toHaveBeenCalledWith('user-1');
       expect(jwtService.signAsync).not.toHaveBeenCalled();
-      expect(refreshTokenRepository.revokeById).not.toHaveBeenCalled();
+      expect(refreshTokenRepository.revokeActiveById).not.toHaveBeenCalled();
       expect(refreshTokenRepository.create).not.toHaveBeenCalled();
     });
   });
@@ -342,15 +384,19 @@ describe('AuthService', () => {
           tokenHash,
         }),
       ]);
-      refreshTokenRepository.revokeById.mockResolvedValue(undefined);
+      refreshTokenRepository.revokeActiveById.mockResolvedValue({
+        affected: 1,
+      });
 
       await service.logout({ refreshToken });
 
       expect(
         refreshTokenRepository.findAllAliveTokensByTime,
       ).toHaveBeenCalledWith(expect.any(Date));
-      expect(refreshTokenRepository.revokeById).toHaveBeenCalledWith(
+      expect(refreshTokenRepository.revokeActiveById).toHaveBeenCalledWith(
         'refresh-token-1',
+        'user-1',
+        expect.any(Date),
       );
     });
 
@@ -367,7 +413,7 @@ describe('AuthService', () => {
         service.logout({ refreshToken: 'refresh-token' }),
       ).rejects.toBeInstanceOf(UnauthorizedException);
 
-      expect(refreshTokenRepository.revokeById).not.toHaveBeenCalled();
+      expect(refreshTokenRepository.revokeActiveById).not.toHaveBeenCalled();
     });
   });
 
@@ -412,7 +458,9 @@ describe('AuthService', () => {
           id: 'refresh-token-1',
         }),
       ]);
-      refreshTokenRepository.revokeById.mockResolvedValue(undefined);
+      refreshTokenRepository.revokeActiveById.mockResolvedValue({
+        affected: 1,
+      });
 
       await service.revokeSession(
         {
@@ -426,8 +474,10 @@ describe('AuthService', () => {
         'user-1',
         expect.any(Date),
       );
-      expect(refreshTokenRepository.revokeById).toHaveBeenCalledWith(
+      expect(refreshTokenRepository.revokeActiveById).toHaveBeenCalledWith(
         'refresh-token-1',
+        'user-1',
+        expect.any(Date),
       );
     });
 
@@ -448,7 +498,7 @@ describe('AuthService', () => {
         ),
       ).rejects.toBeInstanceOf(NotFoundException);
 
-      expect(refreshTokenRepository.revokeById).not.toHaveBeenCalled();
+      expect(refreshTokenRepository.revokeActiveById).not.toHaveBeenCalled();
     });
   });
 });

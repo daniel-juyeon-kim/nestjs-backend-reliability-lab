@@ -305,6 +305,7 @@ Access token은 짧게 유지하고, refresh token은 서버 세션과 연결한
 - [x] refresh token 재사용 감지
 - [x] 활성 세션 목록 조회
 - [x] 특정 세션 폐기 API
+- [x] 동시 refresh 요청 단일 성공 처리
 
 ### 예상 API
 
@@ -319,6 +320,8 @@ DELETE /auth/sessions/:sessionId
 `POST /auth/refresh`는 refresh token을 받아 유효한 active token hash와 비교한 뒤 새 access token과 새 refresh token을 발급한다.
 
 현재 단계에서는 refresh token rotation을 적용한다. refresh 요청이 성공하면 기존 refresh token은 `revokedAt`으로 폐기하고, 새 refresh token의 hash를 DB에 저장한 뒤 새 access token과 함께 반환한다. 이미 폐기된 refresh token이 다시 사용되면 재사용 시도로 보고 해당 사용자의 active refresh token을 모두 폐기한다.
+
+같은 refresh token으로 동시에 재발급 요청이 들어오면 하나만 성공해야 한다. 현재 구현은 `id`, `userId`, `revokedAt IS NULL`, `expiresAt > now` 조건부 update로 refresh token 사용권을 선점하고, affected row가 1이 아니면 `401 Unauthorized`로 실패시킨다.
 
 `POST /auth/logout`은 refresh token을 받아 현재 refresh session을 폐기한다. 로그아웃 후 같은 refresh token으로 access token을 재발급할 수 없어야 한다.
 
@@ -357,6 +360,7 @@ DELETE /auth/sessions/:sessionId
 - [x] 만료된 refresh token 처리
 - [x] 활성 세션 목록 조회
 - [x] 특정 세션 폐기
+- [x] 동시 refresh 요청 단일 성공 처리
 
 ### 검증 기준
 
@@ -374,6 +378,8 @@ DELETE /auth/sessions/:sessionId
 - session 목록 응답에는 `tokenHash`가 포함되지 않는다.
 - 현재 사용자는 본인의 active refresh session을 폐기할 수 있다.
 - 존재하지 않거나 소유하지 않은 session 폐기는 `404 Not Found`를 반환한다.
+- 같은 refresh token으로 동시에 재발급 요청을 보내면 하나만 성공한다.
+- refresh token 사용권 선점에 실패한 요청은 새 access token과 refresh token을 발급받지 못한다.
 
 ## 과제 3: Redis 기반 인증 상태 관리
 
@@ -428,8 +434,8 @@ auth:session-cache:{sessionId}
 
 ### 실습 후보
 
-1. 동시에 같은 refresh token으로 재발급 요청을 보냈을 때 하나만 성공하게 만들기
-2. refresh token 재사용을 감지하고 세션을 폐기하기
+1. [x] 동시에 같은 refresh token으로 재발급 요청을 보냈을 때 하나만 성공하게 만들기
+2. [x] refresh token 재사용을 감지하고 세션을 폐기하기
 3. 쿠폰 또는 포인트 같은 제한 자원을 만들어 동시 차감 문제 해결하기
 
 ### 다룰 기술
@@ -443,20 +449,20 @@ auth:session-cache:{sessionId}
 
 ### 직접 구현해야 하는 부분
 
-- 실패하는 동시성 테스트 작성
-- transaction 경계 설정
-- lock 전략 선택
-- lock 적용 후 테스트 통과시키기
-- lock 범위 최소화
-- 동시성 해결 방식의 장단점 문서화
+- [x] 실패하는 동시성 테스트 작성
+- [x] 조건부 update 전략 선택
+- [x] affected row 기반 성공 여부 확인
+- [x] 동시 refresh 요청 테스트 통과시키기
+- [x] lock 범위 최소화
+- [ ] 동시성 해결 방식의 장단점 문서화
 
 ### 검증 기준
 
 - 수정 전 race condition을 테스트로 재현할 수 있다.
-- 수정 후 동시에 들어온 refresh 요청 중 하나만 성공한다.
-- 실패한 요청은 일관된 에러를 반환한다.
-- DB 상태가 중간 상태로 깨지지 않는다.
-- transaction 범위가 불필요하게 넓지 않다.
+- [x] 수정 후 동시에 들어온 refresh 요청 중 하나만 성공한다.
+- [x] 실패한 요청은 일관된 에러를 반환한다.
+- [x] DB 상태가 중간 상태로 깨지지 않는다.
+- [x] transaction 범위가 불필요하게 넓지 않다.
 
 ## 과제 5: OAuth/OIDC와 구글 로그인
 

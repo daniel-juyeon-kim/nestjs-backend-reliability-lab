@@ -13,12 +13,26 @@ describe('RefreshTokenRepository', () => {
         };
       }) => Promise<RefreshToken[]>
     >;
+    update: jest.MockedFunction<
+      (
+        criteria: {
+          id?: string;
+          userId?: string;
+          expiresAt?: ReturnType<typeof MoreThan>;
+          revokedAt?: ReturnType<typeof IsNull>;
+        },
+        partialEntity: {
+          revokedAt: Date;
+        },
+      ) => Promise<{ affected?: number | null }>
+    >;
   };
   let refreshTokenRepository: RefreshTokenRepository;
 
   beforeEach(() => {
     repository = {
       find: jest.fn().mockResolvedValue([]),
+      update: jest.fn().mockResolvedValue({ affected: 1 }),
     };
     refreshTokenRepository = new RefreshTokenRepository(
       repository as unknown as Repository<RefreshToken>,
@@ -62,5 +76,27 @@ describe('RefreshTokenRepository', () => {
         revokedAt: IsNull(),
       },
     });
+  });
+
+  it('active refresh token만 조건부로 폐기한다', async () => {
+    const now = new Date('2026-06-21T12:00:00.000Z');
+
+    await refreshTokenRepository.revokeActiveById(
+      'refresh-token-1',
+      'user-1',
+      now,
+    );
+
+    expect(repository.update).toHaveBeenCalledWith(
+      {
+        id: 'refresh-token-1',
+        userId: 'user-1',
+        expiresAt: MoreThan(now),
+        revokedAt: IsNull(),
+      },
+      {
+        revokedAt: now,
+      },
+    );
   });
 });

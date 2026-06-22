@@ -39,13 +39,21 @@ export class RefreshTokenRepository {
     });
   }
 
-  revokeById(id: string) {
-    return this.refreshTokenRepository.update(id, { revokedAt: new Date() });
+  revokeActiveById(id: string, userId: string, now: Date) {
+    return this.refreshTokenRepository.update(
+      {
+        id,
+        userId,
+        revokedAt: IsNull(),
+        expiresAt: MoreThan(now),
+      },
+      { revokedAt: now },
+    );
   }
 
-  updateRevokedAtByUserId(id: string) {
+  updateRevokedAtByUserId(userId: string) {
     return this.refreshTokenRepository.update(
-      { userId: id, revokedAt: IsNull() },
+      { userId: userId, revokedAt: IsNull() },
       { revokedAt: new Date() },
     );
   }
