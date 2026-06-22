@@ -1,10 +1,10 @@
-# 인증 학습 랩 설계서
+# NestJS 백엔드 학습 랩 설계서
 
 ## 목표
 
-이 프로젝트는 인증, JWT, 세션, Passport, Redis, 동시성, 메시지큐를 직접 구현하면서 학습하기 위한 백엔드 실습 프로젝트다. 하나의 정답 인증 방식만 익히는 것이 아니라, 여러 인증 방식을 직접 구현하고 비교하면서 각각의 장단점과 사용 맥락을 이해하는 것을 목표로 한다.
+이 프로젝트는 NestJS 백엔드를 직접 구현하면서 인증, JWT/세션, API key, Redis, DB 동시성, 메시지큐, OAuth/OIDC 같은 핵심 백엔드 주제를 단계별로 학습하기 위한 실습 프로젝트다.
 
-완성된 인증 서버를 한 번에 제공하는 것이 목적이 아니다. 프로젝트는 실행 가능한 NestJS 인증 백엔드를 점진적으로 만들고, 각 인증 개념을 작은 단위로 구현한 뒤 테스트와 코드 리뷰로 검증한다. 학습자는 핵심 인증 로직을 직접 작성하고, 에이전트는 구현 후 코드 리뷰, 테스트 보강, 인프라 정리를 지원한다.
+완성된 서버를 한 번에 제공하는 것이 목적이 아니다. 프로젝트는 실행 가능한 NestJS 백엔드를 점진적으로 만들고, 각 백엔드 개념을 작은 단위로 구현한 뒤 테스트와 코드 리뷰로 검증한다. 인증은 첫 번째 큰 축이지만, Redis, DB 동시성, 메시지큐, OAuth/OIDC도 독립 학습 축으로 다룬다. 학습자는 핵심 로직을 직접 작성하고, 에이전트는 구현 후 코드 리뷰, 테스트 보강, 인프라 정리를 지원한다.
 
 ## 학습 원칙
 
@@ -13,6 +13,7 @@
 - 과제는 작게 나누고, 각 과제는 테스트와 리뷰를 통과해야 완료된다.
 - 막혔을 때는 정답 코드보다 힌트, 설계 방향, 디버깅 순서를 먼저 제공한다.
 - 인증 보안, 인증 방식 간 trade-off, 데이터 모델, 트랜잭션, Redis TTL, 큐 재시도처럼 실제 백엔드에서 중요한 지점을 우선한다.
+- 각 트랙은 실패 케이스 재현, 구현, 보안 또는 장애 검증, trade-off 문서화를 포함해야 완료된다.
 
 ## 기술 스택
 
@@ -56,8 +57,23 @@
 아직 구현하지 않는다:
 
 - 완성된 Redis rate limit
-- 완성된 동시성 제어 코드
+- 수량 제한 쿠폰 도메인의 완성된 동시성 제어 코드
 - 완성된 BullMQ worker
+
+## 학습 트랙
+
+현재 커리큘럼은 다음 순서로 진행한다.
+
+1. Auth baseline
+2. Refresh Session Security
+3. DB Concurrency
+4. Redis State and Rate Limit
+5. API Key
+6. OAuth/OIDC
+7. BullMQ
+8. Ops Security and Observability
+
+인증 도메인은 앞부분의 학습 소재로 사용한다. Redis, DB 동시성, 메시지큐는 인증을 보조하는 기능이 아니라 별도의 백엔드 역량으로 검증한다.
 
 ## 프로젝트 구조 초안
 
@@ -112,7 +128,7 @@ test/
 
 기본 피드백 방식은 페어 프로그래밍이 아니라 코드 리뷰다.
 
-## 과제 1: Local Auth와 JWT Access Token
+## Track 1: Auth baseline
 
 ### 목표
 
@@ -195,7 +211,7 @@ GET /auth/me
 - 세션 관리
 - OAuth
 
-## 과제 1.5: 인증 방식 비교
+## Track 1.5: 인증 방식 비교
 
 ### 목표
 
@@ -282,7 +298,7 @@ JWT access token 방식만 알면 인증을 단순히 "토큰을 발급하고 �
 - WebAuthn
 - 운영용 multi-factor authentication
 
-## 과제 2: Refresh Token과 Session 모델
+## Track 2: Refresh Session Security
 
 ### 목표
 
@@ -290,7 +306,7 @@ JWT만 사용하는 인증과 서버 세션을 함께 사용하는 인증의 차
 
 Access token은 짧게 유지하고, refresh token은 서버 세션과 연결한다. Refresh token은 평문 저장하지 않고 해시해서 저장한다.
 
-이 과제는 과제 1의 stateless JWT 방식과 과제 1.5의 stateful session 방식을 바탕으로 hybrid 인증 방식을 구현하는 단계다.
+이 트랙은 Track 1의 stateless JWT 방식과 Track 1.5의 stateful session 방식을 바탕으로 hybrid 인증 방식을 구현하는 단계다.
 
 ### 구현할 기능
 
@@ -381,11 +397,108 @@ DELETE /auth/sessions/:sessionId
 - 같은 refresh token으로 동시에 재발급 요청을 보내면 하나만 성공한다.
 - refresh token 사용권 선점에 실패한 요청은 새 access token과 refresh token을 발급받지 못한다.
 
-## 과제 3: Redis 기반 인증 상태 관리
+## Track 3: DB Concurrency
 
 ### 목표
 
-Redis를 단순 캐시가 아니라 TTL, 원자적 증가, 임시 인증 상태 저장소로 사용해 본다.
+동시에 들어오는 요청이 DB 상태를 꼬이게 만드는 상황을 재현하고 해결한다.
+
+Refresh token rotation은 이미 인증 트랙에서 다룬 동시성 예제다. 이 트랙에서는 수량 제한 쿠폰을 별도 도메인으로 만들고, 여러 요청이 동시에 같은 자원을 차감할 때 DB 상태가 깨지지 않게 만든다.
+
+Track 3는 이 커리큘럼에서 가장 깊게 다룬다. 단, 범위를 넓히지 않는다. 쿠폰, 포인트, 재고를 모두 만들지 않고 하나의 제한 자원 도메인에서 race condition 재현, 데이터 불변식 보존, lock 선택, idempotency를 검증한다.
+
+### 실습 후보
+
+1. [x] 동시에 같은 refresh token으로 재발급 요청을 보냈을 때 하나만 성공하게 만들기
+2. [x] refresh token 재사용을 감지하고 세션을 폐기하기
+3. [ ] 수량 제한 쿠폰으로 초과 발급 문제 해결하기
+4. [ ] 같은 사용자의 중복 쿠폰 claim 방지하기
+5. [ ] idempotency key로 요청 재시도 안전하게 처리하기
+
+### 권장 도메인
+
+수량 제한 쿠폰을 사용한다.
+
+- `coupons.remaining`: lost update와 초과 발급을 재현한다.
+- `coupon_claims`: 사용자별 중복 claim을 막는다.
+- `idempotency_keys`: 같은 요청 재시도 시 side effect가 한 번만 발생하게 한다.
+
+포인트는 ledger와 정산 개념이 섞여 범위가 커지고, 재고는 불변식이 선명하지만 중복 지급 unique constraint 학습이 약하다. 쿠폰은 초과 차감, 중복 지급, idempotency를 작은 모델 안에서 함께 다룰 수 있다.
+
+### 다룰 기술
+
+- TypeORM transaction
+- conditional update
+- pessimistic lock
+- optimistic lock
+- unique constraint
+- idempotency key
+- deadlock 또는 lock wait timeout의 제한 재시도 정책
+- race condition 재현 테스트
+
+### 직접 구현해야 하는 부분
+
+- [x] 실패하는 동시성 테스트 작성
+- [x] 조건부 update 전략 선택
+- [x] affected row 기반 성공 여부 확인
+- [x] 동시 refresh 요청 테스트 통과시키기
+- [x] lock 범위 최소화
+- [ ] 제한 자원 동시 차감 실패 테스트 작성
+- [ ] naive read-modify-write로 초과 발급 재현
+- [ ] `remaining > 0` 조건부 update와 affected row 기반 성공 판정
+- [ ] 쿠폰 claim 기록과 수량 차감을 하나의 짧은 transaction으로 처리
+- [ ] `(userId, couponId)` unique constraint로 중복 claim 방지
+- [ ] idempotency key 저장과 재시도 처리
+- [ ] pessimistic lock 비교 실험
+- [ ] 동시성 해결 방식의 장단점 문서화
+- [ ] 동시성 incident-style writeup 작성
+
+### 검증 기준
+
+- 수정 전 race condition을 테스트로 재현할 수 있다.
+- [x] 수정 후 동시에 들어온 refresh 요청 중 하나만 성공한다.
+- [x] 실패한 요청은 일관된 에러를 반환한다.
+- [x] DB 상태가 중간 상태로 깨지지 않는다.
+- [x] transaction 범위가 불필요하게 넓지 않다.
+- 쿠폰 수량이 10개일 때 동시에 50~100개 claim 요청을 보내면 성공은 정확히 10개다.
+- 쿠폰 수량은 음수가 되지 않는다.
+- 같은 사용자가 같은 쿠폰을 동시에 여러 번 claim해도 하나만 성공한다.
+- 같은 idempotency key와 같은 payload로 재시도하면 추가 차감 없이 같은 결과를 반환한다.
+- 같은 idempotency key와 다른 payload로 요청하면 `409 Conflict`를 반환한다.
+- 성공한 claim 기록 수와 차감된 쿠폰 수량이 일치한다.
+- deadlock 또는 lock wait timeout은 제한된 횟수만 재시도하고, 비즈니스 실패는 재시도하지 않는다.
+
+### 전략 비교 기준
+
+- 조건부 update는 단일 row 수량 차감의 기본 해법으로 구현한다.
+- unique constraint는 중복 지급 방어의 기본 해법으로 구현한다.
+- idempotency key는 클라이언트 재시도와 timeout after commit을 방어하기 위해 구현한다.
+- pessimistic lock은 짧은 비교 실험으로 구현한다.
+- optimistic lock과 isolation level 세부 비교는 문서화 중심으로 다룬다.
+
+### 산출물
+
+- 실패하는 동시성 테스트
+- 수정 후 통과하는 MySQL 기반 e2e 또는 integration test
+- conditional update, pessimistic lock, optimistic lock, unique constraint, idempotency key 비교 문서
+- 요청 A/B가 어디서 충돌하고 어디서 막히는지 보여주는 짧은 시퀀스 다이어그램
+- 문제 재현, 원인, 해결, 검증을 정리한 incident-style writeup
+
+### 이 트랙에서 다루지 않는 것
+
+- 쿠폰, 포인트, 재고를 모두 구현하기
+- 주문, 결제, 정산 도메인
+- Redis distributed lock
+- Saga, outbox, event sourcing
+- 다중 DB transaction
+- 운영용 재고 시스템 수준의 상태 모델
+- 재사용 가능한 locking framework
+
+## Track 4: Redis State and Rate Limit
+
+### 목표
+
+Redis를 단순 캐시가 아니라 TTL, 원자적 증가, 임시 상태 저장소로 사용해 본다. 인증 관련 blacklist와 rate limit은 첫 실습 소재로 사용하지만, 학습 목표는 Redis의 상태 관리, 원자 연산, 장애 처리 정책을 익히는 것이다.
 
 ### 구현할 기능
 
@@ -407,11 +520,13 @@ auth:session-cache:{sessionId}
 
 ### 직접 구현해야 하는 부분
 
+- access token `jti` 설계
 - Redis client module
 - key prefix 관리
 - TTL 정책
 - login rate limit 증가 로직
 - rate limit 만료 처리
+- `INCR`와 `EXPIRE` 원자성 보장 방식 결정
 - access token blacklist 저장 및 조회
 - Redis 장애 시 에러 처리 정책
 
@@ -422,49 +537,74 @@ auth:session-cache:{sessionId}
 - 로그인 실패가 일정 횟수를 넘으면 일시적으로 차단된다.
 - rate limit 증가는 원자적으로 동작해야 한다.
 - TTL이 없는 인증 임시 key를 만들지 않는다.
+- Redis 장애 시 기능별 fail-open 또는 fail-closed 정책이 문서화되어 있다.
 - Redis 장애 메시지는 사용자에게 과도한 내부 정보를 노출하지 않는다.
 
-## 과제 4: 동시성 실습
+## Track 5: API Key
 
 ### 목표
 
-동시에 들어오는 요청이 인증 상태를 꼬이게 만드는 상황을 재현하고 해결한다.
+사용자 로그인과 서버 간 client 인증을 분리해서 이해한다. API key는 평문으로 저장하지 않고, 발급, 조회, 폐기, 회전을 독립된 인증 방식으로 다룬다.
 
-특히 refresh token rotation은 동시성 문제가 발생하기 좋은 주제다. 같은 refresh token으로 거의 동시에 두 요청이 들어오면 둘 다 성공하면 안 된다.
+### 구현할 기능
 
-### 실습 후보
+- API key 발급
+- key prefix와 hash 저장
+- API key guard
+- key owner와 scope 관리
+- last used at 기록
+- API key revoke
+- API key rotation
 
-1. [x] 동시에 같은 refresh token으로 재발급 요청을 보냈을 때 하나만 성공하게 만들기
-2. [x] refresh token 재사용을 감지하고 세션을 폐기하기
-3. 쿠폰 또는 포인트 같은 제한 자원을 만들어 동시 차감 문제 해결하기
+### 예상 API
 
-### 다룰 기술
+```text
+POST /api-keys
+GET /api-keys
+DELETE /api-keys/:keyId
+POST /api-keys/:keyId/rotate
+GET /internal/me
+```
 
-- TypeORM transaction
-- pessimistic lock
-- optimistic lock
-- unique constraint
-- idempotency key
-- race condition 재현 테스트
+### 데이터 모델
+
+`api_keys` 테이블은 최소한 다음 필드를 가진다.
+
+- `id`
+- `ownerId`
+- `name`
+- `prefix`
+- `keyHash`
+- `scopes`
+- `lastUsedAt`
+- `revokedAt`
+- `createdAt`
+- `updatedAt`
 
 ### 직접 구현해야 하는 부분
 
-- [x] 실패하는 동시성 테스트 작성
-- [x] 조건부 update 전략 선택
-- [x] affected row 기반 성공 여부 확인
-- [x] 동시 refresh 요청 테스트 통과시키기
-- [x] lock 범위 최소화
-- [ ] 동시성 해결 방식의 장단점 문서화
+- API key 원문 생성
+- API key hash 저장
+- prefix 기반 후보 key 조회
+- scope 검증
+- revoke와 rotation 정책
+- rotation 동시 요청 처리
+- `lastUsedAt` 업데이트 빈도 제한 또는 비동기 처리 정책
+- API key guard
+- API key 실패 테스트
 
 ### 검증 기준
 
-- 수정 전 race condition을 테스트로 재현할 수 있다.
-- [x] 수정 후 동시에 들어온 refresh 요청 중 하나만 성공한다.
-- [x] 실패한 요청은 일관된 에러를 반환한다.
-- [x] DB 상태가 중간 상태로 깨지지 않는다.
-- [x] transaction 범위가 불필요하게 넓지 않다.
+- API key 원문은 최초 발급 응답에서만 확인할 수 있다.
+- API key는 DB에 평문으로 저장되지 않는다.
+- 폐기된 API key는 사용할 수 없다.
+- rotation 이후 이전 key는 사용할 수 없다.
+- 동시에 rotation 요청을 보내도 active key 상태가 일관된다.
+- scope가 부족한 API key는 보호 API에 접근할 수 없다.
+- `lastUsedAt` 기록은 인증 경로의 병목이 되지 않는다.
+- API key 원문과 hash는 로그와 응답에 노출되지 않는다.
 
-## 과제 5: OAuth/OIDC와 구글 로그인
+## Track 6: OAuth/OIDC와 구글 로그인
 
 ### 목표
 
@@ -528,6 +668,7 @@ DELETE /auth/linked-accounts/google
 - provider profile에서 내부 사용자 식별
 - 신규 사용자 생성 또는 기존 사용자 연결
 - provider account unique constraint 설계
+- account linking 동시 요청 처리
 - 구글 로그인 후 내부 JWT/session 발급
 - 연결 해제 정책
 - OAuth e2e 또는 strategy test
@@ -537,6 +678,7 @@ DELETE /auth/linked-accounts/google
 - 구글 callback이 성공하면 내부 사용자와 세션이 생성된다.
 - 같은 구글 계정으로 다시 로그인하면 기존 사용자로 로그인된다.
 - provider account는 중복 연결되지 않는다.
+- 같은 provider 계정으로 동시에 callback이 들어와도 provider account는 하나만 생성된다.
 - provider access token 원문은 로그에 남지 않는다.
 - state가 없거나 잘못되면 callback은 실패한다.
 - 구글 계정 연결을 해제하면 해당 provider login은 더 이상 사용할 수 없다.
@@ -551,19 +693,19 @@ DELETE /auth/linked-accounts/google
 - WebAuthn
 - 운영용 multi-factor authentication
 
-## 과제 6: 메시지큐
+## Track 7: BullMQ 메시지큐
 
 ### 목표
 
-API 요청에서 느리거나 실패 가능한 작업을 분리하고, BullMQ로 백그라운드 작업을 처리한다.
+API 요청에서 느리거나 실패 가능한 작업을 분리하고, BullMQ로 백그라운드 작업을 처리한다. 이메일 인증, 비밀번호 재설정, 로그인 알림은 실습 소재이며, 핵심 목표는 retry, backoff, failed job, idempotency, worker 분리를 검증하는 것이다.
 
 ### 구현할 기능
 
 - BullMQ queue 설정
 - worker 설정
-- 이메일 인증 작업 enqueue
-- 비밀번호 재설정 이메일 enqueue
-- 로그인 알림 enqueue
+- 필수: 이메일 인증 작업 enqueue
+- 선택: 비밀번호 재설정 이메일 enqueue
+- 선택: 로그인 알림 enqueue
 - retry 정책
 - failed job 처리
 - 중복 작업 방지
@@ -585,6 +727,7 @@ login-notification.requested
 - processor worker
 - job payload 타입
 - retry/backoff 설정
+- max attempts와 poison job 처리 기준
 - failed job 로깅
 - idempotency 처리
 - queue 관련 테스트
@@ -596,6 +739,29 @@ login-notification.requested
 - 실패한 job은 retry된다.
 - 영구 실패한 job은 failed 상태로 남고 로그가 남는다.
 - 같은 요청이 반복되어도 중복 side effect가 발생하지 않는다.
+- 같은 business key의 job이 중복 실행되어도 side effect는 한 번만 발생한다.
+
+## Track 8: Ops Security and Observability
+
+### 목표
+
+각 트랙에서 만든 기능을 운영 가능한 백엔드 기준으로 점검한다. 별도의 거대한 운영 시스템을 만들지 않고, 로그, 설정, 장애 메시지, 보안 회귀 테스트를 정리한다.
+
+### 구현할 기능
+
+- secret과 환경변수 검증
+- token, key, hash 로그 마스킹
+- 인증 실패와 의심 이벤트 기록
+- Redis와 queue 장애 메시지 정리
+- migration과 test DB 분리 점검
+- 보안 회귀 테스트 보강
+
+### 검증 기준
+
+- 로그에 access token, refresh token, API key, token hash, secret이 남지 않는다.
+- 외부 응답은 내부 인프라 오류를 그대로 노출하지 않는다.
+- 의심 이벤트는 디버깅 가능한 수준으로 기록된다.
+- 각 트랙의 실패 케이스가 테스트로 남아 있다.
 
 ## 모듈 책임 분리
 
@@ -609,6 +775,7 @@ login-notification.requested
 - Passport strategy는 credential 또는 token payload 검증을 담당한다.
 - Guard는 라우트 접근 제어를 담당한다.
 - Redis helper는 key 이름, TTL, 원자 연산을 감춘다.
+- API key service는 key 발급, hash 저장, rotation, revoke만 담당한다.
 - Queue producer는 job 생성만 담당한다.
 - Queue processor는 job 처리만 담당한다.
 
@@ -637,19 +804,21 @@ login-notification.requested
 - refresh token은 rotation한다.
 - refresh token 재사용은 의심 이벤트로 처리한다.
 - Redis 인증 key는 namespace와 TTL을 가진다.
-- 로그에 token 원문을 남기지 않는다.
+- API key는 prefix와 hash로 저장하고 원문을 로그에 남기지 않는다.
+- 로그에 token 원문, key 원문, hash, secret을 남기지 않는다.
 
 ## 테스트 기준
 
-각 과제는 테스트를 포함해야 완료된다.
+각 트랙은 테스트를 포함해야 완료된다.
 
 - service unit test
 - Passport strategy test
 - controller 또는 e2e test
 - 실패 케이스 테스트
 - 보안 회귀 테스트
-- 동시성 과제에서는 race condition 테스트
-- 메시지큐 과제에서는 enqueue 및 worker 테스트
+- 동시성 트랙에서는 race condition 테스트
+- 메시지큐 트랙에서는 enqueue 및 worker 테스트
+- 운영 보안 트랙에서는 민감정보 노출 회귀 테스트
 
 검증 명령은 프로젝트 생성 후 다음 형태를 목표로 한다.
 
@@ -664,10 +833,11 @@ npm run test:e2e
 
 프로젝트 방향은 다음 기준으로 고정한다.
 
-- NestJS 인증 학습 백엔드로 유지한다.
+- NestJS 백엔드 학습 랩으로 유지한다.
+- 인증은 첫 번째 큰 트랙이지만 전체 프로젝트 범위는 아니다.
 - MySQL과 TypeORM을 기본 데이터 저장 계층으로 사용한다.
 - Passport 기반 local, JWT, session, API key, OAuth/OIDC 실습을 순차적으로 진행한다.
-- Redis와 BullMQ는 후속 과제에서 인증 상태 관리와 메시지큐 학습에 사용한다.
+- Redis, DB 동시성, BullMQ는 인증 보조 기능이 아니라 독립 백엔드 학습 트랙으로 다룬다.
 - 프론트엔드, FastAPI, Supabase, PostgreSQL은 이 저장소 범위에 포함하지 않는다.
 - 첫 번째 정리 목표는 빌드 가능한 NestJS 기준선을 만드는 것이다.
 
@@ -683,8 +853,8 @@ npm run test:e2e
 
 이 설계는 다음 조건을 만족하면 완료된 것으로 본다.
 
-- 프로젝트 목적이 학습용 인증 랩으로 명확하다.
+- 프로젝트 목적이 Auth를 첫 트랙으로 삼는 NestJS 백엔드 학습 랩으로 명확하다.
 - 기술 스택이 NestJS, Passport, MySQL, TypeORM, Redis, BullMQ로 고정되어 있다.
 - 학습자가 직접 구현할 부분과 에이전트가 제공할 스켈레톤 범위가 분리되어 있다.
-- 각 과제의 목표, 구현 범위, 검증 기준이 문서만 보고 이해 가능하다.
+- 각 트랙의 목표, 구현 범위, 검증 기준이 문서만 보고 이해 가능하다.
 - 다음 단계에서 구현 계획을 작성할 수 있을 만큼 범위가 좁혀져 있다.

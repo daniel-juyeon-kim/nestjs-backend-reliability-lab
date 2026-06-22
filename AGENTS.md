@@ -1,10 +1,11 @@
 # Project Agent Instructions
 
 ## Project Direction
-- This repository is a NestJS authentication learning backend.
+- This repository is a NestJS backend learning lab.
+- Authentication is the first major track, not the full project scope.
 - Keep the backend stack on NestJS, Passport, MySQL, and TypeORM.
 - Do not introduce Next.js, FastAPI, Supabase, or PostgreSQL unless the project direction is explicitly changed.
-- Redis, BullMQ, OAuth/OIDC, and concurrency exercises are later learning stages, not the first implementation target.
+- Redis, BullMQ, OAuth/OIDC, API keys, and concurrency exercises are independent later learning tracks, not the first implementation target.
 
 ## Workflow
 - Follow Research -> Plan -> Act -> Validate.
@@ -25,4 +26,3 @@
 - `npm run lint`
 - `npm run test`
 - `npm run test:e2e`
-
