@@ -58,7 +58,7 @@ describe('Coupons e2e', () => {
     await app?.close();
   });
 
-  it('동시에 claim해도 쿠폰 수량만큼만 성공해야 한다', async () => {
+  it('동시에 claim해도 쿠폰 수량만큼만 성공하고 remaining은 0이 된다', async () => {
     const coupon = await dataSource.getRepository(Coupon).save({
       name: 'limited coupon',
       remaining: 10,
@@ -74,9 +74,17 @@ describe('Coupons e2e', () => {
     const successCount = responses.filter(
       ({ status }) => status === 201,
     ).length;
+    const conflictCount = responses.filter(
+      ({ status }) => status === 409,
+    ).length;
     const claimCount = await dataSource.getRepository(CouponClaim).count();
+    const updatedCoupon = await dataSource
+      .getRepository(Coupon)
+      .findOneByOrFail({ id: coupon.id });
 
     expect(successCount).toBe(10);
+    expect(conflictCount).toBe(40);
     expect(claimCount).toBe(10);
+    expect(updatedCoupon.remaining).toBe(0);
   });
 });
