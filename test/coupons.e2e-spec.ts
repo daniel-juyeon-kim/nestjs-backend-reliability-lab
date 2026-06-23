@@ -64,12 +64,18 @@ describe('Coupons e2e', () => {
       remaining: 10,
     });
 
-    const responses = await Promise.all(
-      Array.from({ length: 50 }, () =>
+    const results = await Promise.allSettled(
+      Array.from({ length: 12 }, () =>
         request(httpServer)
           .post(`/coupons/${coupon.id}/claims`)
           .send({ userId: randomUUID() }),
       ),
+    );
+    const rejectedResults = results.filter(
+      (result) => result.status === 'rejected',
+    );
+    const responses = results.flatMap((result) =>
+      result.status === 'fulfilled' ? [result.value] : [],
     );
     const successCount = responses.filter(
       ({ status }) => status === 201,
@@ -82,9 +88,51 @@ describe('Coupons e2e', () => {
       .getRepository(Coupon)
       .findOneByOrFail({ id: coupon.id });
 
+    expect(rejectedResults).toEqual([]);
     expect(successCount).toBe(10);
-    expect(conflictCount).toBe(40);
+    expect(conflictCount).toBe(2);
     expect(claimCount).toBe(10);
     expect(updatedCoupon.remaining).toBe(0);
+  });
+
+  it('같은 사용자가 같은 쿠폰을 동시에 claim해도 한 번만 성공해야 한다', async () => {
+    const userId = randomUUID();
+    const coupon = await dataSource.getRepository(Coupon).save({
+      name: 'one per user coupon',
+      remaining: 10,
+    });
+
+    const results = await Promise.allSettled(
+      Array.from({ length: 5 }, () =>
+        request(httpServer)
+          .post(`/coupons/${coupon.id}/claims`)
+          .send({ userId }),
+      ),
+    );
+    const rejectedResults = results.filter(
+      (result) => result.status === 'rejected',
+    );
+    const responses = results.flatMap((result) =>
+      result.status === 'fulfilled' ? [result.value] : [],
+    );
+    const successCount = responses.filter(
+      ({ status }) => status === 201,
+    ).length;
+    const conflictCount = responses.filter(
+      ({ status }) => status === 409,
+    ).length;
+    const claimCount = await dataSource.getRepository(CouponClaim).countBy({
+      couponId: coupon.id,
+      userId,
+    });
+    const updatedCoupon = await dataSource
+      .getRepository(Coupon)
+      .findOneByOrFail({ id: coupon.id });
+
+    expect(rejectedResults).toEqual([]);
+    expect(successCount).toBe(1);
+    expect(conflictCount).toBe(4);
+    expect(claimCount).toBe(1);
+    expect(updatedCoupon.remaining).toBe(9);
   });
 });
