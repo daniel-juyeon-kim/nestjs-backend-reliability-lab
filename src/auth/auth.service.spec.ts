@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
+import { RedisService } from 'src/redis/redis.service';
 import { UsersService } from 'src/users/users.service';
 import { AuthService } from './auth.service';
 import { RefreshToken } from './entities/refresh-token.entity';
@@ -59,6 +60,14 @@ describe('AuthService', () => {
       (userId: string) => Promise<unknown>
     >;
   };
+  let redisService: {
+    get: jest.MockedFunction<(key: string) => Promise<string | null>>;
+    increment: jest.MockedFunction<(key: string) => Promise<number>>;
+    expire: jest.MockedFunction<
+      (key: string, ttlSeconds: number) => Promise<number>
+    >;
+    delete: jest.MockedFunction<(key: string) => Promise<number>>;
+  };
 
   beforeEach(() => {
     usersService = {
@@ -77,11 +86,18 @@ describe('AuthService', () => {
       revokeActiveById: jest.fn(),
       updateRevokedAtByUserId: jest.fn(),
     };
+    redisService = {
+      get: jest.fn(),
+      increment: jest.fn(),
+      expire: jest.fn(),
+      delete: jest.fn(),
+    };
 
     service = new AuthService(
       jwtService as unknown as JwtService,
       usersService as unknown as UsersService,
       refreshTokenRepository as unknown as RefreshTokenRepository,
+      redisService as unknown as RedisService,
     );
   });
 
@@ -193,6 +209,70 @@ describe('AuthService', () => {
       await expect(
         bcrypt.compare(returnedRefreshToken, createArg?.tokenHash ?? ''),
       ).resolves.toBe(true);
+    });
+  });
+
+  describe('validateUser', () => {
+    const email = 'user@example.com';
+    const password = 'password123';
+    const ip = '127.0.0.1';
+    const loginFailureKey = `login-failure:${ip}:${email}`;
+
+    it('실패 횟수가 제한 이상이면 사용자 조회 전에 거부한다', async () => {
+      redisService.get.mockResolvedValue('5');
+
+      await expect(
+        service.validateUser(email, password, ip),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+
+      expect(usersService.findByEmail).not.toHaveBeenCalled();
+      expect(redisService.increment).not.toHaveBeenCalled();
+    });
+
+    it('없는 이메일이면 실패 횟수를 증가시키고 첫 실패에 TTL을 설정한다', async () => {
+      redisService.get.mockResolvedValue(null);
+      redisService.increment.mockResolvedValue(1);
+      usersService.findByEmail.mockResolvedValue(null);
+
+      await expect(
+        service.validateUser(email, password, ip),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+
+      expect(redisService.increment).toHaveBeenCalledWith(loginFailureKey);
+      expect(redisService.expire).toHaveBeenCalledWith(loginFailureKey, 60);
+    });
+
+    it('비밀번호가 틀리면 실패 횟수를 증가시킨다', async () => {
+      const passwordHash = await bcrypt.hash(password, 10);
+      redisService.get.mockResolvedValue(null);
+      redisService.increment.mockResolvedValue(2);
+      usersService.findByEmail.mockResolvedValue({
+        id: 'user-1',
+        email,
+        passwordHash,
+      });
+
+      await expect(
+        service.validateUser(email, 'wrong-password', ip),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+
+      expect(redisService.increment).toHaveBeenCalledWith(loginFailureKey);
+      expect(redisService.expire).not.toHaveBeenCalled();
+    });
+
+    it('로그인에 성공하면 실패 횟수를 초기화하고 사용자 정보를 반환한다', async () => {
+      const passwordHash = await bcrypt.hash(password, 10);
+      redisService.get.mockResolvedValue('4');
+      usersService.findByEmail.mockResolvedValue({
+        id: 'user-1',
+        email,
+        passwordHash,
+      });
+
+      const result = await service.validateUser(email, password, ip);
+
+      expect(redisService.delete).toHaveBeenCalledWith(loginFailureKey);
+      expect(result).toEqual({ id: 'user-1', email });
     });
   });
 

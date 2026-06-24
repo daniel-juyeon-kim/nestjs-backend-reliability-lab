@@ -119,6 +119,28 @@ describe('Auth e2e', () => {
     await request(httpServer).get('/auth/me').expect(401);
   });
 
+  it('로그인에 5번 실패하면 올바른 비밀번호도 거부한다', async () => {
+    const email = `login-failure-${Date.now()}@example.com`;
+    const password = 'password123';
+
+    await request(httpServer)
+      .post('/auth/register')
+      .send({ email, password })
+      .expect(201);
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      await request(httpServer)
+        .post('/auth/login')
+        .send({ email, password: 'wrong-password' })
+        .expect(401);
+    }
+
+    await request(httpServer)
+      .post('/auth/login')
+      .send({ email, password })
+      .expect(401);
+  });
+
   it('로그아웃 후 같은 refreshToken으로 accessToken을 재발급할 수 없다', async () => {
     const email = 'logout-user@example.com';
     const password = 'password123';

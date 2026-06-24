@@ -8,6 +8,8 @@ const validConfig = {
   DB_USERNAME: 'root',
   DB_PASSWORD: 'password',
   DB_NAME: 'learn_auth',
+  REDIS_HOST: 'localhost',
+  REDIS_PORT: '6379',
   JWT_ACCESS_SECRET: 'test-access-secret',
   JWT_ACCESS_EXPIRES_IN: '15m',
 };
@@ -18,6 +20,8 @@ describe('validateEnv', () => {
 
     expect(result.JWT_ACCESS_SECRET).toBe('test-access-secret');
     expect(result.JWT_ACCESS_EXPIRES_IN).toBe('15m');
+    expect(result.REDIS_HOST).toBe('localhost');
+    expect(result.REDIS_PORT).toBe(6379);
   });
 
   it('JWT access token secret이 없으면 에러를 던진다', () => {

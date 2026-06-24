@@ -7,6 +7,7 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
+import { RedisService } from 'src/redis/redis.service';
 import { UsersService } from 'src/users/users.service';
 import { JwtPayloadDto } from './dto/jwt.payload.dto';
 import { RefreshTokenDto } from './dto/refresh.dto';
@@ -15,12 +16,17 @@ import { RefreshToken } from './entities/refresh-token.entity';
 import { RefreshTokenRepository } from './refresh-token.repository';
 import { AuthenticatedUser } from './types/authenticated-user.type';
 
+const LOGIN_FAILURE_KEY_PREFIX = 'login-failure';
+const LOGIN_FAILURE_LIMIT = 5;
+const LOGIN_FAILURE_TTL_SECONDS = 60;
+
 @Injectable()
 export class AuthService {
   constructor(
     private readonly jwtService: JwtService,
     private readonly userService: UsersService,
     private readonly refreshTokenRepository: RefreshTokenRepository,
+    private readonly redis: RedisService,
   ) {}
 
   async register(dto: RegisterDto) {
@@ -199,5 +205,40 @@ export class AuthService {
     }
 
     throw new NotFoundException();
+  }
+
+  async validateUser(email: string, password: string, ip: string | undefined) {
+    const loginFailureKey = `${LOGIN_FAILURE_KEY_PREFIX}:${ip}:${email}`;
+
+    const loginFailureCount = Number(
+      (await this.redis.get(loginFailureKey)) ?? 0,
+    );
+
+    if (LOGIN_FAILURE_LIMIT <= loginFailureCount) {
+      throw new UnauthorizedException();
+    }
+
+    const user = await this.userService.findByEmail(email);
+
+    if (!user) {
+      await this.recordLoginFailure(loginFailureKey);
+      throw new UnauthorizedException();
+    }
+
+    if (!(await bcrypt.compare(password, user.passwordHash))) {
+      await this.recordLoginFailure(loginFailureKey);
+      throw new UnauthorizedException();
+    }
+
+    await this.redis.delete(loginFailureKey);
+    return { id: user.id, email: user.email };
+  }
+
+  private async recordLoginFailure(loginFailureKey: string) {
+    const loginFailureCount = await this.redis.increment(loginFailureKey);
+
+    if (loginFailureCount === 1) {
+      await this.redis.expire(loginFailureKey, LOGIN_FAILURE_TTL_SECONDS);
+    }
   }
 }
