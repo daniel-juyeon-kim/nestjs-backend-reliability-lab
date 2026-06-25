@@ -210,9 +210,7 @@ export class AuthService {
   async validateUser(email: string, password: string, ip: string | undefined) {
     const loginFailureKey = `${LOGIN_FAILURE_KEY_PREFIX}:${ip}:${email}`;
 
-    const loginFailureCount = Number(
-      (await this.redis.get(loginFailureKey)) ?? 0,
-    );
+    const loginFailureCount = await this.getLoginFailureCount(loginFailureKey);
 
     if (LOGIN_FAILURE_LIMIT <= loginFailureCount) {
       throw new UnauthorizedException();
@@ -230,15 +228,36 @@ export class AuthService {
       throw new UnauthorizedException();
     }
 
-    await this.redis.delete(loginFailureKey);
+    await this.clearLoginFailure(loginFailureKey);
     return { id: user.id, email: user.email };
   }
 
-  private async recordLoginFailure(loginFailureKey: string) {
-    const loginFailureCount = await this.redis.increment(loginFailureKey);
+  private async getLoginFailureCount(loginFailureKey: string) {
+    try {
+      return Number((await this.redis.get(loginFailureKey)) ?? 0);
+    } catch (error) {
+      console.error('Redis login failure count read failed', error);
+      return 0;
+    }
+  }
 
-    if (loginFailureCount === 1) {
-      await this.redis.expire(loginFailureKey, LOGIN_FAILURE_TTL_SECONDS);
+  private async recordLoginFailure(loginFailureKey: string) {
+    try {
+      const loginFailureCount = await this.redis.increment(loginFailureKey);
+
+      if (loginFailureCount === 1) {
+        await this.redis.expire(loginFailureKey, LOGIN_FAILURE_TTL_SECONDS);
+      }
+    } catch (error) {
+      console.error('Redis login failure record failed', error);
+    }
+  }
+
+  private async clearLoginFailure(loginFailureKey: string) {
+    try {
+      await this.redis.delete(loginFailureKey);
+    } catch (error) {
+      console.error('Redis login failure clear failed', error);
     }
   }
 }

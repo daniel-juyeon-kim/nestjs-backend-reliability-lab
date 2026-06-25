@@ -68,8 +68,12 @@ describe('AuthService', () => {
     >;
     delete: jest.MockedFunction<(key: string) => Promise<number>>;
   };
+  let consoleErrorSpy: jest.SpiedFunction<typeof console.error>;
 
   beforeEach(() => {
+    consoleErrorSpy = jest
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
     usersService = {
       create: jest.fn(),
       findByEmail: jest.fn(),
@@ -99,6 +103,10 @@ describe('AuthService', () => {
       refreshTokenRepository as unknown as RefreshTokenRepository,
       redisService as unknown as RedisService,
     );
+  });
+
+  afterEach(() => {
+    consoleErrorSpy.mockRestore();
   });
 
   describe('register', () => {
@@ -272,6 +280,50 @@ describe('AuthService', () => {
       const result = await service.validateUser(email, password, ip);
 
       expect(redisService.delete).toHaveBeenCalledWith(loginFailureKey);
+      expect(result).toEqual({ id: 'user-1', email });
+    });
+
+    it('Redis 조회에 실패해도 올바른 로그인은 허용한다', async () => {
+      const passwordHash = await bcrypt.hash(password, 10);
+      redisService.get.mockRejectedValue(new Error('Redis unavailable'));
+      usersService.findByEmail.mockResolvedValue({
+        id: 'user-1',
+        email,
+        passwordHash,
+      });
+
+      const result = await service.validateUser(email, password, ip);
+
+      expect(result).toEqual({ id: 'user-1', email });
+    });
+
+    it('Redis 실패 기록에 실패해도 잘못된 비밀번호는 UnauthorizedException을 던진다', async () => {
+      const passwordHash = await bcrypt.hash(password, 10);
+      redisService.get.mockResolvedValue(null);
+      redisService.increment.mockRejectedValue(new Error('Redis unavailable'));
+      usersService.findByEmail.mockResolvedValue({
+        id: 'user-1',
+        email,
+        passwordHash,
+      });
+
+      await expect(
+        service.validateUser(email, 'wrong-password', ip),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+    });
+
+    it('Redis 초기화에 실패해도 올바른 로그인은 허용한다', async () => {
+      const passwordHash = await bcrypt.hash(password, 10);
+      redisService.get.mockResolvedValue('4');
+      redisService.delete.mockRejectedValue(new Error('Redis unavailable'));
+      usersService.findByEmail.mockResolvedValue({
+        id: 'user-1',
+        email,
+        passwordHash,
+      });
+
+      const result = await service.validateUser(email, password, ip);
+
       expect(result).toEqual({ id: 'user-1', email });
     });
   });

@@ -525,6 +525,7 @@ auth:session-cache:{sessionId}
 - Redis 명령: `GET`, `INCR`, `EXPIRE`, `DEL`
 - TTL 정책: 첫 실패로 count가 1이 될 때만 `EXPIRE 60`을 설정한다.
 - 성공 처리: 로그인 성공 시 실패 카운터를 `DEL`로 삭제한다.
+- 장애 정책: Redis 장애 시 fail-open으로 동작하며, 로그인 실패 제한만 일시적으로 비활성화한다.
 
 ### 직접 구현해야 하는 부분
 
@@ -536,7 +537,7 @@ auth:session-cache:{sessionId}
 - [x] rate limit 만료 처리
 - `INCR`와 `EXPIRE` 원자성 보장 방식 결정
 - access token blacklist 저장 및 조회
-- Redis 장애 시 에러 처리 정책
+- [x] Redis 장애 시 에러 처리 정책
 
 ### 검증 기준
 
@@ -545,8 +546,8 @@ auth:session-cache:{sessionId}
 - [x] 로그인 실패가 일정 횟수를 넘으면 일시적으로 차단된다.
 - [x] TTL이 없는 인증 임시 key를 만들지 않는다.
 - rate limit 증가는 원자적으로 동작해야 한다.
-- Redis 장애 시 기능별 fail-open 또는 fail-closed 정책이 문서화되어 있다.
-- Redis 장애 메시지는 사용자에게 과도한 내부 정보를 노출하지 않는다.
+- [x] Redis 장애 시 기능별 fail-open 또는 fail-closed 정책이 문서화되어 있다.
+- [x] Redis 장애 메시지는 사용자에게 과도한 내부 정보를 노출하지 않는다.
 
 ## Track 5: API Key
 
