@@ -503,29 +503,37 @@ Redis를 단순 캐시가 아니라 TTL, 원자적 증가, 임시 상태 저장�
 ### 구현할 기능
 
 - access token blacklist
-- login rate limit
+- [x] login rate limit
 - refresh 실패 횟수 제한
 - 선택 사항: session lookup cache
 
-### Redis key 설계 예시
+### Redis key 설계
 
 ```text
 auth:blacklist:access-token:{jti}
-auth:rate-limit:login:{email-or-ip}
+login-failure:{ip}:{email}
 auth:refresh-fail:{sessionId}
 auth:session-cache:{sessionId}
 ```
 
-실제 key 이름은 구현 시 확정한다. 모든 임시 key는 TTL을 가져야 한다.
+`login-failure:{ip}:{email}`은 현재 구현된 로그인 실패 제한 key다. 모든 인증 임시 key는 TTL을 가져야 한다.
+
+### 현재 구현된 login rate limit
+
+- 기준: IP + email 조합
+- 제한: 첫 실패 시점부터 60초 동안 5회 실패
+- Redis 명령: `GET`, `INCR`, `EXPIRE`, `DEL`
+- TTL 정책: 첫 실패로 count가 1이 될 때만 `EXPIRE 60`을 설정한다.
+- 성공 처리: 로그인 성공 시 실패 카운터를 `DEL`로 삭제한다.
 
 ### 직접 구현해야 하는 부분
 
 - access token `jti` 설계
-- Redis client module
-- key prefix 관리
-- TTL 정책
-- login rate limit 증가 로직
-- rate limit 만료 처리
+- [x] Redis client module
+- [x] key prefix 관리
+- [x] TTL 정책
+- [x] login rate limit 증가 로직
+- [x] rate limit 만료 처리
 - `INCR`와 `EXPIRE` 원자성 보장 방식 결정
 - access token blacklist 저장 및 조회
 - Redis 장애 시 에러 처리 정책
@@ -534,9 +542,9 @@ auth:session-cache:{sessionId}
 
 - 로그아웃한 access token은 blacklist에 들어간다.
 - blacklist에 있는 access token으로 보호 API에 접근할 수 없다.
-- 로그인 실패가 일정 횟수를 넘으면 일시적으로 차단된다.
+- [x] 로그인 실패가 일정 횟수를 넘으면 일시적으로 차단된다.
+- [x] TTL이 없는 인증 임시 key를 만들지 않는다.
 - rate limit 증가는 원자적으로 동작해야 한다.
-- TTL이 없는 인증 임시 key를 만들지 않는다.
 - Redis 장애 시 기능별 fail-open 또는 fail-closed 정책이 문서화되어 있다.
 - Redis 장애 메시지는 사용자에게 과도한 내부 정보를 노출하지 않는다.
 
