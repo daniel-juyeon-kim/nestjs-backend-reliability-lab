@@ -6,15 +6,19 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
-import { randomBytes } from 'crypto';
+import { randomBytes, randomUUID } from 'crypto';
 import { RedisService } from 'src/redis/redis.service';
 import { UsersService } from 'src/users/users.service';
+import { ACCESS_TOKEN_BLACKLIST_KEY_PREFIX } from './auth.constants';
 import { JwtPayloadDto } from './dto/jwt.payload.dto';
 import { RefreshTokenDto } from './dto/refresh.dto';
 import { RegisterDto } from './dto/register.dto';
 import { RefreshToken } from './entities/refresh-token.entity';
 import { RefreshTokenRepository } from './refresh-token.repository';
-import { AuthenticatedUser } from './types/authenticated-user.type';
+import {
+  AccessTokenUser,
+  AuthenticatedUser,
+} from './types/authenticated-user.type';
 
 const LOGIN_FAILURE_KEY_PREFIX = 'login-failure';
 const LOGIN_FAILURE_LIMIT = 5;
@@ -54,9 +58,11 @@ export class AuthService {
 
   async login(user: AuthenticatedUser) {
     // 일치하면 jwt 토큰 발급
+    const jti = randomUUID();
     const accessToken = await this.jwtService.signAsync<JwtPayloadDto>({
       sub: user.id,
       email: user.email,
+      jti,
     });
 
     // 리프레시 토큰 발급
@@ -122,9 +128,11 @@ export class AuthService {
     await this.refreshTokenRepository.create(refreshTokenEntity);
 
     // 액세스 토큰 생성
+    const jti = randomUUID();
     const accessToken = await this.jwtService.signAsync<JwtPayloadDto>({
       sub: user.id,
       email: user.email,
+      jti,
     });
 
     return { accessToken, refreshToken: newRefreshToken };
@@ -158,7 +166,7 @@ export class AuthService {
     return null;
   }
 
-  async logout(dto: RefreshTokenDto) {
+  async logout(dto: RefreshTokenDto, user: AccessTokenUser) {
     const token = await this.findMatchAliveRefreshToken(dto.refreshToken);
 
     if (token === null) {
@@ -171,6 +179,14 @@ export class AuthService {
       refreshTokenId,
       token.userId,
       new Date(),
+    );
+
+    const ACCESS_TOKEN_BLACKLIST_KEY = `${ACCESS_TOKEN_BLACKLIST_KEY_PREFIX}:${user.jti}`;
+
+    await this.redis.setWithTtl(
+      ACCESS_TOKEN_BLACKLIST_KEY,
+      '1',
+      user.exp - Math.floor(Date.now() / 1000),
     );
   }
 

@@ -33,7 +33,7 @@ describe('AuthService', () => {
   };
   let jwtService: {
     signAsync: jest.MockedFunction<
-      (payload: { sub: string; email: string }) => Promise<string>
+      (payload: { sub: string; email: string; jti: string }) => Promise<string>
     >;
   };
   let refreshTokenRepository: {
@@ -62,6 +62,9 @@ describe('AuthService', () => {
   };
   let redisService: {
     get: jest.MockedFunction<(key: string) => Promise<string | null>>;
+    setWithTtl: jest.MockedFunction<
+      (key: string, value: string, ttlSeconds: number) => Promise<string | null>
+    >;
     increment: jest.MockedFunction<(key: string) => Promise<number>>;
     expire: jest.MockedFunction<
       (key: string, ttlSeconds: number) => Promise<number>
@@ -92,6 +95,7 @@ describe('AuthService', () => {
     };
     redisService = {
       get: jest.fn(),
+      setWithTtl: jest.fn(),
       increment: jest.fn(),
       expire: jest.fn(),
       delete: jest.fn(),
@@ -177,11 +181,13 @@ describe('AuthService', () => {
         id: 'user-1',
         email: 'user@example.com',
       });
+      const signPayload = jwtService.signAsync.mock.calls[0]?.[0];
 
-      expect(jwtService.signAsync).toHaveBeenCalledWith({
+      expect(signPayload).toMatchObject({
         sub: 'user-1',
         email: 'user@example.com',
       });
+      expect(typeof signPayload?.jti).toBe('string');
       expect(result.accessToken).toBe('access-token');
       expect(result.refreshToken).toEqual(expect.any(String));
       expect(result.refreshToken).toHaveLength(128);
@@ -363,15 +369,17 @@ describe('AuthService', () => {
 
       const result = await service.refreshAccessToken({ refreshToken });
       const createArg = refreshTokenRepository.create.mock.calls[0]?.[0];
+      const signPayload = jwtService.signAsync.mock.calls[0]?.[0];
 
       expect(refreshTokenRepository.findAllTokensByTime).toHaveBeenCalledWith(
         expect.any(Date),
       );
       expect(usersService.findById).toHaveBeenCalledWith('user-1');
-      expect(jwtService.signAsync).toHaveBeenCalledWith({
+      expect(signPayload).toMatchObject({
         sub: 'user-1',
         email: 'user@example.com',
       });
+      expect(typeof signPayload?.jti).toBe('string');
       expect(refreshTokenRepository.revokeActiveById).toHaveBeenCalledWith(
         'refresh-token-1',
         'user-1',
@@ -520,7 +528,15 @@ describe('AuthService', () => {
         affected: 1,
       });
 
-      await service.logout({ refreshToken });
+      await service.logout(
+        { refreshToken },
+        {
+          id: 'user-1',
+          email: 'user@example.com',
+          jti: 'access-token-1',
+          exp: Math.floor(Date.now() / 1000) + 300,
+        },
+      );
 
       expect(
         refreshTokenRepository.findAllAliveTokensByTime,
@@ -529,6 +545,11 @@ describe('AuthService', () => {
         'refresh-token-1',
         'user-1',
         expect.any(Date),
+      );
+      expect(redisService.setWithTtl).toHaveBeenCalledWith(
+        'auth:blacklist:access-token:access-token-1',
+        '1',
+        expect.any(Number),
       );
     });
 
@@ -542,10 +563,19 @@ describe('AuthService', () => {
       ]);
 
       await expect(
-        service.logout({ refreshToken: 'refresh-token' }),
+        service.logout(
+          { refreshToken: 'refresh-token' },
+          {
+            id: 'user-1',
+            email: 'user@example.com',
+            jti: 'access-token-1',
+            exp: Math.floor(Date.now() / 1000) + 300,
+          },
+        ),
       ).rejects.toBeInstanceOf(UnauthorizedException);
 
       expect(refreshTokenRepository.revokeActiveById).not.toHaveBeenCalled();
+      expect(redisService.setWithTtl).not.toHaveBeenCalled();
     });
   });
 

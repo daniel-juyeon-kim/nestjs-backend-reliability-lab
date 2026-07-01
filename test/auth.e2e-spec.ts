@@ -154,18 +154,24 @@ describe('Auth e2e', () => {
       .post('/auth/login')
       .send({ email, password })
       .expect(201);
-    const { refreshToken } = loginResponse.body as LoginResponse;
+    const { accessToken, refreshToken } = loginResponse.body as LoginResponse;
 
     expect(refreshToken).toEqual(expect.any(String));
 
     await request(httpServer)
       .post('/auth/logout')
+      .set('Authorization', `Bearer ${accessToken}`)
       .send({ refreshToken })
       .expect(201);
 
     await request(httpServer)
       .post('/auth/refresh')
       .send({ refreshToken })
+      .expect(401);
+
+    await request(httpServer)
+      .get('/auth/me')
+      .set('Authorization', `Bearer ${accessToken}`)
       .expect(401);
   });
 

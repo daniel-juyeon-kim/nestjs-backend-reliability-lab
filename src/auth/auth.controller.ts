@@ -13,7 +13,10 @@ import { RefreshTokenDto } from './dto/refresh.dto';
 import { RegisterDto } from './dto/register.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { LocalAuthGuard } from './guards/local-auth.guard';
-import type { AuthenticatedUser } from './types/authenticated-user.type';
+import type {
+  AccessTokenUser,
+  AuthenticatedUser,
+} from './types/authenticated-user.type';
 
 @Controller('auth')
 export class AuthController {
@@ -33,7 +36,7 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @Get('me')
   getMe(@CurrentUser() user: AuthenticatedUser) {
-    return user;
+    return { id: user.id, email: user.email };
   }
 
   @UseGuards(JwtAuthGuard)
@@ -56,8 +59,9 @@ export class AuthController {
     return this.authService.refreshAccessToken(dto);
   }
 
+  @UseGuards(JwtAuthGuard)
   @Post('logout')
-  logout(@Body() dto: RefreshTokenDto) {
-    return this.authService.logout(dto);
+  logout(@Body() dto: RefreshTokenDto, @CurrentUser() user: AccessTokenUser) {
+    return this.authService.logout(dto, user);
   }
 }

@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { RedisModule } from 'src/redis/redis.module';
 import { UsersModule } from 'src/users/users.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
@@ -20,6 +21,7 @@ import { LocalStrategy } from './strategies/local.strategy';
       useFactory: createJwtModuleOptions,
     }),
     TypeOrmModule.forFeature([RefreshToken]),
+    RedisModule,
     UsersModule,
   ],
   controllers: [AuthController],

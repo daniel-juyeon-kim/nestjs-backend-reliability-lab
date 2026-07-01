@@ -1,6 +1,7 @@
 import { UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Env } from 'src/config/env.schema';
+import { RedisService } from 'src/redis/redis.service';
 import { UsersService } from 'src/users/users.service';
 import { JwtStrategy } from './jwt.strategy';
 
@@ -18,6 +19,9 @@ describe('JwtStrategy', () => {
   let configService: {
     getOrThrow: jest.MockedFunction<(key: string) => string>;
   };
+  let redisService: {
+    get: jest.MockedFunction<(key: string) => Promise<string | null>>;
+  };
 
   beforeEach(() => {
     usersService = {
@@ -26,10 +30,14 @@ describe('JwtStrategy', () => {
     configService = {
       getOrThrow: jest.fn().mockReturnValue('test-access-secret'),
     };
+    redisService = {
+      get: jest.fn().mockResolvedValue(null),
+    };
 
     strategy = new JwtStrategy(
       usersService as unknown as UsersService,
       configService as unknown as ConfigService<Env, true>,
+      redisService as unknown as RedisService,
     );
   });
 
@@ -43,12 +51,19 @@ describe('JwtStrategy', () => {
     const result = await strategy.validate({
       sub: 'user-1',
       email: 'user@example.com',
+      jti: 'access-token-1',
+      exp: 1770000000,
     });
 
+    expect(redisService.get).toHaveBeenCalledWith(
+      'auth:blacklist:access-token:access-token-1',
+    );
     expect(usersService.findById).toHaveBeenCalledWith('user-1');
     expect(result).toEqual({
       id: 'user-1',
       email: 'user@example.com',
+      jti: 'access-token-1',
+      exp: 1770000000,
     });
   });
 
@@ -59,8 +74,37 @@ describe('JwtStrategy', () => {
       strategy.validate({
         sub: 'missing-user',
         email: 'missing@example.com',
+        jti: 'access-token-1',
       }),
     ).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
+  it('blacklist에 있는 access token이면 UnauthorizedException을 던진다', async () => {
+    redisService.get.mockResolvedValue('1');
+
+    await expect(
+      strategy.validate({
+        sub: 'user-1',
+        email: 'user@example.com',
+        jti: 'access-token-1',
+      }),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+
+    expect(usersService.findById).not.toHaveBeenCalled();
+  });
+
+  it('blacklist 조회에 실패하면 UnauthorizedException을 던진다', async () => {
+    redisService.get.mockRejectedValue(new Error('Redis unavailable'));
+
+    await expect(
+      strategy.validate({
+        sub: 'user-1',
+        email: 'user@example.com',
+        jti: 'access-token-1',
+      }),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+
+    expect(usersService.findById).not.toHaveBeenCalled();
   });
 
   it('JWT access token secret을 ConfigService에서 읽어온다', () => {
@@ -79,6 +123,7 @@ describe('JwtStrategy', () => {
         new JwtStrategy(
           usersService as unknown as UsersService,
           brokenConfigService as unknown as ConfigService<Env, true>,
+          redisService as unknown as RedisService,
         ),
     ).toThrow('JWT_ACCESS_SECRET is required');
   });
