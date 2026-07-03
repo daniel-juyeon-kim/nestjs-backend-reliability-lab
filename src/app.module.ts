@@ -6,6 +6,7 @@ import { HealthModule } from './health/health.module';
 import { UsersModule } from './users/users.module';
 import { RedisModule } from './redis/redis.module';
 import { TransfersModule } from './transfers/transfers.module';
+import { EmailVerificationModule } from './email-verification/email-verification.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { TransfersModule } from './transfers/transfers.module';
     RootConfigModule,
     RedisModule,
     TransfersModule,
+    EmailVerificationModule,
   ],
 })
 export class AppModule {}

@@ -748,14 +748,14 @@ API 요청에서 느리거나 실패 가능한 작업을 분리하고, BullMQ로
 
 ### 구현할 기능
 
-- BullMQ queue 설정
-- worker 설정
-- 필수: 이메일 인증 작업 enqueue
+- [x] BullMQ queue 설정
+- [x] worker 설정
+- [x] 필수: 이메일 인증 작업 enqueue
 - 선택: 비밀번호 재설정 이메일 enqueue
 - 선택: 로그인 알림 enqueue
-- retry 정책
+- [x] retry 정책
 - failed job 처리
-- 중복 작업 방지
+- [x] 중복 작업 방지
 
 ### 예상 작업
 
@@ -769,15 +769,15 @@ login-notification.requested
 
 ### 직접 구현해야 하는 부분
 
-- Queue module
-- producer service
-- processor worker
-- job payload 타입
-- retry/backoff 설정
+- [x] Queue module
+- [x] producer service
+- [x] processor worker
+- [x] job payload 타입
+- [x] retry/backoff 설정
 - max attempts와 poison job 처리 기준
 - failed job 로깅
-- idempotency 처리
-- queue 관련 테스트
+- [x] idempotency 처리
+- [x] queue 관련 테스트
 
 ### 검증 기준
 
@@ -790,8 +790,8 @@ login-notification.requested
 
 현재 코드 상태:
 
-- BullMQ 관련 dependency, module, producer, worker, test는 아직 없다.
-- Redis는 `src/redis`에 있지만 queue backend로는 아직 사용하지 않는다.
+- BullMQ dependency, module, producer, worker, test가 추가되었다.
+- BullMQ는 Redis 환경 설정을 사용해 queue backend에 연결한다.
 
 ## Track 6: API Key
 
