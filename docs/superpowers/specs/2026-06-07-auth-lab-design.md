@@ -754,7 +754,7 @@ API 요청에서 느리거나 실패 가능한 작업을 분리하고, BullMQ로
 - 선택: 비밀번호 재설정 이메일 enqueue
 - 선택: 로그인 알림 enqueue
 - [x] retry 정책
-- failed job 처리
+- [x] failed job 처리
 - [x] 중복 작업 방지
 
 ### 예상 작업
@@ -775,7 +775,7 @@ login-notification.requested
 - [x] job payload 타입
 - [x] retry/backoff 설정
 - max attempts와 poison job 처리 기준
-- failed job 로깅
+- [x] failed job 로깅
 - [x] idempotency 처리
 - [x] queue 관련 테스트
 
