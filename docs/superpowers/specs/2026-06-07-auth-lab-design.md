@@ -32,7 +32,7 @@
 
 ## 현재 구현 상태
 
-현재 프로젝트는 초기 스켈레톤 단계를 지나 Local Auth, JWT Access Token, Refresh Token rotation, Redis login rate limit, 쿠폰 동시성 기초 테스트, 송금 요청 idempotency 테스트까지 구현했다.
+현재 프로젝트는 초기 스켈레톤 단계를 지나 Local Auth, JWT Access Token, Refresh Token rotation, Redis login rate limit, access token blacklist, 쿠폰 동시성 기초 테스트, 송금 요청 idempotency 테스트, BullMQ 이메일 인증 queue 기준선까지 구현했다.
 
 - NestJS 애플리케이션 기본 구조
 - `compose.yml` 기반 MySQL, Redis 실행 환경
@@ -57,17 +57,17 @@
 - 동시 refresh 요청 단일 성공 처리
 - Redis client module
 - IP + email 기준 login rate limit
+- access token `jti`와 logout blacklist
 - 수량 제한 쿠폰 도메인 기본 구조
 - 쿠폰 claim transaction
 - 쿠폰 수량 동시 차감 e2e test
 - 같은 사용자 중복 쿠폰 claim 방지 e2e test
+- BullMQ 이메일 인증 queue, producer, worker, retry/backoff, failed job logging
 - `.env.example`
 
 아직 구현하지 않았다:
 
-- access token blacklist
 - refresh 실패 횟수 제한
-- 완성된 BullMQ worker
 - API key 인증
 - OAuth/OIDC 로그인
 - token, key, hash 로그 마스킹 회귀 테스트
@@ -91,8 +91,8 @@
 1. Auth baseline: local/JWT 인증 기준선을 먼저 만든다.
 2. Refresh Session Security: refresh token rotation, logout, session revoke, reuse detection을 완성한다.
 3. DB Concurrency: 쿠폰 claim 동시성, 송금 요청 idempotency key, 동시성 전략 문서화를 끝낸다.
-4. Redis State and Rate Limit: login rate limit 이후 access token blacklist, `jti`, Redis 원자성 보강을 진행한다.
-5. BullMQ: 이메일 인증 job 1개로 producer, worker, retry/backoff, failed job, queue idempotency를 검증한다.
+4. Redis State and Rate Limit: login rate limit과 access token blacklist 이후 refresh 실패 제한, Redis 원자성 보강을 진행한다.
+5. BullMQ: 이메일 인증 job 1개로 producer, worker, retry/backoff, failed job, queue idempotency를 검증하고, 남은 poison job 기준을 정리한다.
 6. API Key: 서버 간 인증 core를 구현하고 prefix/hash 저장, guard, revoke, scope를 검증한다.
 7. Ops Security and Observability: 앞선 기능들의 로그 마스킹, 장애 메시지, 보안 회귀 테스트를 정리한다.
 8. 인증 방식 비교 정리: JWT, refresh session, session cookie, API key의 trade-off를 문서화한다.
@@ -107,8 +107,8 @@
 | Track 1 Auth baseline | 완료 | local/JWT auth, `/auth/me`, unit/e2e test 구현 |
 | Track 2 Refresh Session Security | 완료에 가까움 | rotation, logout, reuse detection, session 목록/폐기, 동시 refresh 단일 성공 구현 |
 | Track 3 DB Concurrency | 부분 완료 | 쿠폰 claim transaction, pessimistic lock, unique constraint, 동시 claim e2e, 송금 요청 idempotency key 구현. 전략 문서는 미완료 |
-| Track 4 Redis State and Rate Limit | 부분 완료 | Redis service와 login rate limit 구현. access token blacklist, refresh 실패 제한, 원자성 보강은 미완료 |
-| Track 5 BullMQ | 미구현 | queue dependency/module/worker/test 없음 |
+| Track 4 Redis State and Rate Limit | 부분 완료 | Redis service, login rate limit, access token blacklist 구현. refresh 실패 제한과 원자성 보강은 미완료 |
+| Track 5 BullMQ | 부분 완료 | email queue dependency/module/producer/worker/retry/failed logging/test 구현. poison job 기준과 API 연결은 미완료 |
 | Track 6 API Key | 미구현 | API key entity/service/guard/endpoint 없음 |
 | Track 7 Ops Security and Observability | 부분 완료 | env 검증과 test DB 분리 있음. 로그 마스킹/보안 회귀 테스트는 미완료 |
 | Track 1.5 인증 방식 비교 | 부분 완료 | JWT와 hybrid refresh session은 구현, session guard/API key 비교 실습과 trade-off 문서는 미완료 |
@@ -201,7 +201,7 @@ test/
 ### 취업 최적화 우선순위
 
 - `DO`: 회원가입, 이메일 중복 검사, 비밀번호 해싱과 검증, 로그인, Passport local/JWT strategy, JWT guard, `/auth/me`, MySQL e2e, 테스트 DB 격리, JWT 설정 분리
-- `LIGHT`: JWT payload 설계는 현재 `sub`, `email`까지만 구현했다. access token blacklist 단계에서 `jti`를 추가한다.
+- `LIGHT`: JWT payload는 `sub`, `email`, `jti`, `exp`를 사용한다. `jti`는 access token blacklist 식별자로 사용한다.
 - `DOCS ONLY`: 로그인 실패 시 사용자 존재 여부를 숨기는 이유를 짧게 정리한다.
 
 ### 구현할 기능
@@ -669,7 +669,7 @@ Redis를 단순 캐시가 아니라 TTL, 원자적 증가, 임시 상태 저장�
 
 ### 구현할 기능
 
-- [ ] access token blacklist
+- [x] access token blacklist
 - [x] login rate limit
 - [ ] refresh 실패 횟수 제한
 - 선택 사항: session lookup cache
@@ -696,20 +696,20 @@ auth:session-cache:{sessionId}
 
 ### 직접 구현해야 하는 부분
 
-- access token `jti` 설계
+- [x] access token `jti` 설계
 - [x] Redis client module
 - [x] key prefix 관리
 - [x] TTL 정책
 - [x] login rate limit 증가 로직
 - [x] rate limit 만료 처리
 - [ ] `INCR`와 `EXPIRE` 원자성 보장 방식 결정
-- [ ] access token blacklist 저장 및 조회
+- [x] access token blacklist 저장 및 조회
 - [x] Redis 장애 시 에러 처리 정책
 
 ### 검증 기준
 
-- [ ] 로그아웃한 access token은 blacklist에 들어간다.
-- [ ] blacklist에 있는 access token으로 보호 API에 접근할 수 없다.
+- [x] 로그아웃한 access token은 blacklist에 들어간다.
+- [x] blacklist에 있는 access token으로 보호 API에 접근할 수 없다.
 - [x] 로그인 실패가 일정 횟수를 넘으면 일시적으로 차단된다.
 - [x] TTL이 없는 인증 임시 key를 만들지 않는다.
 - [ ] rate limit 증가는 원자적으로 동작해야 한다.
@@ -721,15 +721,17 @@ auth:session-cache:{sessionId}
 - `src/redis/redis.service.ts`: Redis 연결, `get`, `set`, `setWithTtl`, `delete`, `increment`, `expire`, `ttl` helper를 제공한다.
 - `src/auth/auth.service.ts`: 로그인 실패 시 `login-failure:{ip}:{email}` key를 증가시키고 첫 실패에 TTL 60초를 설정한다.
 - `src/auth/auth.service.ts`: Redis read/write/delete 실패 시 로그인 제한만 fail-open으로 처리한다.
+- `src/auth/auth.service.ts`: logout 시 refresh token 검증 후 access token `jti`를 남은 access token TTL 동안 blacklist에 저장한다.
+- `src/auth/strategies/jwt.strategy.ts`: JWT payload의 `jti`와 `exp`를 검증하고 blacklist key를 조회해 차단한다.
 - `src/redis/redis.service.spec.ts`: Redis helper의 set/get/delete/ttl/increment/expire를 실제 Redis로 검증한다.
 - `test/auth.e2e-spec.ts`: 로그인 5회 실패 후 올바른 비밀번호도 거부되는 흐름을 검증한다.
 
 남은 작업:
 
-- [ ] access token payload에 `jti` 추가
-- [ ] logout 또는 revoke 시 access token blacklist 저장
-- [ ] JWT strategy 또는 guard에서 blacklist 조회
-- [ ] blacklist TTL을 access token 잔여 만료 시간과 맞추기
+- [x] access token payload에 `jti` 추가
+- [x] logout 또는 revoke 시 access token blacklist 저장
+- [x] JWT strategy 또는 guard에서 blacklist 조회
+- [x] blacklist TTL을 access token 잔여 만료 시간과 맞추기
 - [ ] rate limit 증가를 Lua script 또는 다른 단일 원자 연산으로 정리
 
 ## Track 5: BullMQ 메시지큐
@@ -904,7 +906,7 @@ GET /internal/me
 - 환경변수 검증은 `src/config/env.schema.ts`에 있고 unit test도 있다.
 - e2e test DB 분리는 `test/setup-e2e.ts`, `test/auth.e2e-spec.ts`, `test/coupons.e2e-spec.ts`에서 `NODE_ENV=test`, `DB_NAME=learn_auth_test`로 방어한다.
 - token/key/hash 로그 마스킹, 의심 이벤트 기록, 보안 회귀 테스트는 아직 없다.
-- Redis 장애는 login rate limit에서 fail-open으로 처리하지만, queue 장애 정책은 BullMQ 미구현이라 아직 없다.
+- Redis 장애는 login rate limit에서 fail-open으로 처리한다. BullMQ queue 장애 정책은 worker 기준선 이후 별도 문서화가 필요하다.
 
 ## Track 8: OAuth/OIDC와 구글 로그인
 
